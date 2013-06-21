@@ -106,9 +106,6 @@ public class MBeanServerFactory {
             }
             this.newlyRegistered = this.registerWithFactory;
         }
-
-        // wrap it for security purposes
-        this.server = new KarafMBeanServerWrapper(this.server);
     }
 
     public void destroy() throws Exception {

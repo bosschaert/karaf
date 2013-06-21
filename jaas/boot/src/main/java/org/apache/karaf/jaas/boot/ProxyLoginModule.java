@@ -41,7 +41,7 @@ public class ProxyLoginModule implements LoginModule {
     public static final String PROPERTY_BUNDLE = "org.apache.karaf.jaas.bundle";
 
     private static BundleContext bundleContext = null;
-    
+
     private LoginModule target = null;
 
     public static void init(BundleContext context) {
