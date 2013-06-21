@@ -71,6 +71,7 @@ public class MBeanServerFactory {
     }
 
     public MBeanServer getServer() throws Exception {
+        System.out.println("**** Obtaining MBeanServer");
         if (this.server == null) {
             init();
         }
@@ -105,6 +106,9 @@ public class MBeanServerFactory {
             }
             this.newlyRegistered = this.registerWithFactory;
         }
+
+        // wrap it for security purposes
+        this.server = new KarafMBeanServerWrapper(this.server);
     }
 
     public void destroy() throws Exception {
@@ -112,5 +116,4 @@ public class MBeanServerFactory {
             javax.management.MBeanServerFactory.releaseMBeanServer(this.server);
         }
     }
-
 }

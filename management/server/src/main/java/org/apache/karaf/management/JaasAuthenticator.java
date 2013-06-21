@@ -18,6 +18,7 @@ package org.apache.karaf.management;
 
 import java.io.IOException;
 import java.security.Principal;
+import java.util.Arrays;
 
 import javax.management.remote.JMXAuthenticator;
 import javax.security.auth.Subject;
@@ -57,6 +58,7 @@ public class JaasAuthenticator implements JMXAuthenticator {
                             + (credentials != null ? credentials.getClass().getName() : null));
         }
         final String[] params = (String[]) credentials;
+        /* */ System.out.println("Authenticate: " + Arrays.toString(params));
         if (params.length != 2) {
             throw new IllegalArgumentException("Expected String[2] but length was " + params.length);
         }
@@ -76,6 +78,7 @@ public class JaasAuthenticator implements JMXAuthenticator {
                 }
             });
             loginContext.login();
+            /* */ System.out.println("Login succeeded, role: " + role + " realm: " + realm);
             if (role != null && role.length() > 0) {
             	String clazz = "org.apache.karaf.jaas.boot.principal.RolePrincipal";
                 String name = role;
