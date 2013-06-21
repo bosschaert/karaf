@@ -106,13 +106,9 @@
     </bean>
 
     <!-- For role-based security on the JMX API -->
+    <reference id="configAdmin" interface="org.osgi.service.cm.ConfigurationAdmin"  />
     <bean id="karafMBeanServerGuard" class="org.apache.karaf.management.KarafMBeanServerGuard" init-method="init">
-    <!-- 
-        <property name="configAdmin" ref="configAdmin" />
-    -->
+        <property name="configAdmin" ref="configAdmin"/>
     </bean>
-    <!-- 
-    <reference id="configAdmin" interface="org.osgi.service.cm.ConfigurationAdmin" />
-    -->
 </blueprint>
 

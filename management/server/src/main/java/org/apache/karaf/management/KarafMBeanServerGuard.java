@@ -33,8 +33,13 @@ public class KarafMBeanServerGuard implements InvocationHandler {
             "invoke", "getAttribute", "getAttributes", "setAttribute", "setAttributes"));
     private ConfigurationAdmin configAdmin;
 
-    public void setConfigAdminService(ConfigurationAdmin ca) {
-        configAdmin = ca;
+    public ConfigurationAdmin getConfigAdmin() {
+        return configAdmin;
+    }
+
+    public void setConfigAdmin(ConfigurationAdmin configAdmin) {
+        System.out.println("$$$$ Initializing configAdmin " + configAdmin);
+        this.configAdmin = configAdmin;
     }
 
     public void init() {
