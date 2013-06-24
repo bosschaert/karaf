@@ -16,24 +16,28 @@
  */
 package org.apache.karaf.management;
 
+import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.security.AccessControlContext;
 import java.security.AccessController;
+import java.security.Principal;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
+import javax.management.Attribute;
+import javax.management.AttributeList;
 import javax.management.ObjectName;
 import javax.security.auth.Subject;
 
 import org.apache.karaf.jaas.boot.KarafMBeanServerBuilder;
+import org.apache.karaf.jaas.boot.principal.RolePrincipal;
+import org.osgi.framework.InvalidSyntaxException;
+import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 
-public class KarafMBeanServerGuard implements InvocationHandler {
-    // TODO this is duplicated from KarafMBeanServerBuilder
-    private static final List<String> guarded = Collections.unmodifiableList(Arrays.asList(
-            "invoke", "getAttribute", "getAttributes", "setAttribute", "setAttributes"));
+public final class KarafMBeanServerGuard implements InvocationHandler {
     private ConfigurationAdmin configAdmin;
 
     public ConfigurationAdmin getConfigAdmin() {
@@ -41,7 +45,6 @@ public class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     public void setConfigAdmin(ConfigurationAdmin configAdmin) {
-        System.out.println("$$$$ Initializing configAdmin " + configAdmin);
         this.configAdmin = configAdmin;
     }
 
@@ -51,21 +54,138 @@ public class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        if (guarded.contains(method.getName())) {
-            if (((ObjectName) args[0]).getCanonicalName().startsWith("org.apache.karaf")) {
-                System.out.println("**** Guard being invoked:" + method.getName() + "#" + Arrays.toString(args));
-                System.out.println("     Looking in CM: " + configAdmin);
+        if (method.getParameterTypes().length == 0)
+            return null;
 
-                // pid = "roles.mbean.osgi.compendium.cm // last piece is the first object value
-                // pid = "roles.mbean.org.apache.karaf.system
+        if (!ObjectName.class.isAssignableFrom(method.getParameterTypes()[0]))
+            return null;
 
-                AccessControlContext acc = AccessController.getContext();
-                Subject subject = Subject.getSubject(acc);
-                System.out.println("@@@ " + subject);
+        // System.out.println("**** Guard being invoked:" + method.getName() + "#" + Arrays.toString(args));
+        ObjectName objectName = (ObjectName) args[0];
+        if (objectName.getCanonicalName().startsWith("org.apache.karaf")) {
+            if ("getAttribute".equals(method.getName())) {
+                handleGetAttribute(objectName, (String) args[1]);
+            } else if ("getAttributes".equals(method.getName())) {
+                handleGetAttributes(objectName, (String[]) args[1]);
+            } else if ("setAttribute".equals(method.getName())) {
+                handleSetAttribute(objectName, (Attribute) args[1]);
+            } else if ("setAttributes".equals(method.getName())) {
+                handleSetAttributes(objectName, (AttributeList) args[1]);
+            } else if ("invoke".equals(method.getName())) {
+                handleInvoke(objectName, (String) args[1], (Object[]) args[2], (String[]) args[3]);
             }
+
         }
 
         return null;
     }
 
+    private void handleGetAttribute(ObjectName objectName, String attributeName) {
+        // TODO Auto-generated method stub
+
+    }
+
+    private void handleGetAttributes(ObjectName objectName, String[] attributeNames) {
+        // TODO Auto-generated method stub
+
+    }
+
+    private void handleSetAttribute(ObjectName objectName, Attribute attribute) {
+        // TODO Auto-generated method stub
+
+    }
+
+    private void handleSetAttributes(ObjectName objectName, AttributeList attributes) {
+        // TODO Auto-generated method stub
+
+    }
+
+    private void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
+        for (String role : getRequiredRoles(objectName, operationName)) {
+            if (currentUserHasRole(role)) {
+                return;
+            }
+        }
+        throw new SecurityException("Insufficient credentials for operation.");
+    }
+
+    private boolean currentUserHasRole(String reqRole) {
+        String clazz;
+        String role;
+        int idx = reqRole.indexOf(':');
+        if (idx > 0) {
+            clazz = reqRole.substring(0, idx);
+            role = reqRole.substring(idx + 1);
+        } else {
+            clazz = RolePrincipal.class.getName();
+            role = reqRole;
+        }
+
+        AccessControlContext acc = AccessController.getContext();
+        if (acc == null)
+            return false;
+        Subject subject = Subject.getSubject(acc);
+        if (subject == null)
+            return false;
+
+        for (Principal p : subject.getPrincipals()) {
+            if (clazz.equals(p.getClass().getName()) && role.equals(p.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private List<String> getRequiredRoles(ObjectName objectName, String methodName) throws IOException, InvalidSyntaxException {
+        List<String> roles = new ArrayList<String>();
+        List<String> segs = getNameSegments(objectName);
+
+        // TODO cache
+        List<String> allPids = new ArrayList<String>();
+        // TODO fine tune filter !?
+        for (Configuration config : configAdmin.listConfigurations(null)) {
+            allPids.add(config.getPid());
+        }
+        for (String pid : iterateDownPids(segs)) {
+            pid = "jmx.acl." + pid;
+            if (allPids.contains(pid)) {
+                Configuration config = configAdmin.getConfiguration(pid);
+                Object reqRoles = config.getProperties().get(methodName);
+                if (reqRoles instanceof String) {
+                    roles.addAll(Arrays.asList(((String) reqRoles).split("[,]")));
+                }
+            }
+        }
+        return roles;
+    }
+
+    private List<String> getNameSegments(ObjectName objectName) {
+        List<String> segs = new ArrayList<String>();
+        segs.addAll(Arrays.asList(objectName.getDomain().split("[.]")));
+
+        // TODO can an object name property contain a comma as key or value?
+        for (String s : objectName.getKeyPropertyListString().split("[,]")) {
+            int idx = s.indexOf('=');
+            if (idx < 0)
+                continue;
+
+            segs.add(objectName.getKeyProperty(s.substring(0, idx)));
+        }
+
+        return segs;
+    }
+
+    private List<String> iterateDownPids(List<String> segs) {
+        List<String> pids = new ArrayList<String>();
+        for (int i = segs.size(); i > 0; i--) {
+            StringBuilder sb = new StringBuilder();
+            for (int j = 0; j < i; j++) {
+                if (sb.length() > 0)
+                    sb.append('.');
+                sb.append(segs.get(j));
+            }
+            pids.add(sb.toString());
+        }
+        return pids;
+    }
 }
