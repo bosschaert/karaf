@@ -24,6 +24,8 @@ import java.security.AccessController;
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Dictionary;
+import java.util.Enumeration;
 import java.util.List;
 
 import javax.management.Attribute;
@@ -101,7 +103,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     private void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
-        for (String role : getRequiredRoles(objectName, operationName)) {
+        for (String role : getRequiredRoles(objectName, operationName, params, signature)) {
             if (currentUserHasRole(role)) {
                 return;
             }
@@ -136,7 +138,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         return false;
     }
 
-    private List<String> getRequiredRoles(ObjectName objectName, String methodName) throws IOException, InvalidSyntaxException {
+    private List<String> getRequiredRoles(ObjectName objectName, String methodName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
         List<String> roles = new ArrayList<String>();
         List<String> segs = getNameSegments(objectName);
 
@@ -150,13 +152,134 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             pid = "jmx.acl." + pid;
             if (allPids.contains(pid)) {
                 Configuration config = configAdmin.getConfiguration(pid);
-                Object reqRoles = config.getProperties().get(methodName);
-                if (reqRoles instanceof String) {
-                    roles.addAll(Arrays.asList(((String) reqRoles).split("[,]")));
+
+                /*
+                1. get all direct string matches
+                2. get regexp matches
+                3. get signature matches
+                4. without signature
+                 */
+
+                Object exactArgMatchRoles = config.getProperties().get(getExactArgSignature(methodName, signature, params));
+                if (exactArgMatchRoles instanceof String) {
+                    roles.addAll(parseRoles((String) exactArgMatchRoles));
+                }
+
+                List<String> regexpRoles = getRegExpRoles(config.getProperties(), methodName, signature, params);
+                if (regexpRoles.size() > 0) {
+                    roles.addAll(regexpRoles);
+                }
+                if (roles.size() > 0)
+                    continue;
+
+                Object signatureRoles = config.getProperties().get(getSignature(methodName, signature));
+                if (signatureRoles instanceof String) {
+                    roles.addAll(parseRoles((String) signatureRoles));
+                    continue;
+                }
+
+                Object methodRoles = config.getProperties().get(methodName);
+                if (methodRoles instanceof String) {
+                    roles.addAll(parseRoles((String) methodRoles));
                 }
             }
         }
         return roles;
+    }
+
+    private List<String> parseRoles(String roleStr) {
+        return Arrays.asList(roleStr.split("[,]"));
+    }
+
+    private Object getExactArgSignature(String methodName, String[] signature, Object[] params) {
+        StringBuilder sb = new StringBuilder(getSignature(methodName, signature));
+        sb.append('[');
+        boolean first = true;
+        for (Object param : params) {
+            if (first)
+                first = false;
+            else
+                sb.append(',');
+            sb.append('"');
+            sb.append(param.toString());
+            sb.append('"');
+        }
+        sb.append(']');
+        return sb.toString();
+    }
+
+    private String getSignature(String methodName, String[] signature) {
+        StringBuilder sb = new StringBuilder(methodName);
+        sb.append('(');
+        boolean first = true;
+        for (String s : signature) {
+            if (first)
+                first = false;
+            else
+                sb.append(',');
+
+            sb.append(s);
+        }
+        sb.append(')');
+        return sb.toString();
+    }
+
+    private List<String> getRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, Object[] params) {
+        List<String> roles = new ArrayList<String>();
+        String methodSig = getSignature(methodName, signature);
+        String prefix = methodSig + "[/";
+        for (Enumeration<String> e = properties.keys(); e.hasMoreElements(); ) {
+            String key = e.nextElement().trim();
+            if (key.startsWith(prefix) && key.endsWith("/]")) {
+                List<String> regexpArgs = getRegExpDecl(key.substring(methodSig.length()));
+                if (allParamsMatch(regexpArgs, params)) {
+                    Object roleStr = properties.get(key);
+                    if (roleStr instanceof String) {
+                        roles.addAll(parseRoles((String) roleStr));
+                    }
+                }
+            }
+        }
+        return roles;
+    }
+
+    private boolean allParamsMatch(List<String> regexpArgs, Object[] params) {
+        if (regexpArgs.size() != params.length)
+            return false;
+
+        for (int i = 0; i < regexpArgs.size(); i++) {
+            if (!params[i].toString().matches(regexpArgs.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<String> getRegExpDecl(String key) {
+        List<String> l = new ArrayList<String>();
+
+        boolean inRegExp = false;
+        StringBuilder curRegExp = new StringBuilder();
+        for (int i = 0; i < key.length(); i++) {
+            if (!inRegExp) {
+                if ("[/".equals(key.substring(i, i+2))) {
+                    inRegExp = true;
+                    i++;
+                    continue;
+                }
+            } else {
+                if ("/]".equals(key.substring(i, i+2))) {
+                    l.add(curRegExp.toString());
+                    curRegExp = new StringBuilder();
+                    inRegExp = false;
+                    i++;
+                    continue;
+                }
+                curRegExp.append(key.charAt(i));
+            }
+
+        }
+        return l;
     }
 
     private List<String> getNameSegments(ObjectName objectName) {
