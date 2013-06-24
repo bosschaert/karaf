@@ -36,7 +36,6 @@
             <cm:property name="rmiRegistryPort" value="1099"/>
             <cm:property name="rmiServerPort" value="44444"/>
             <cm:property name="jmxRealm" value="karaf"/>
-            <cm:property name="jmxRole" value="$[karaf.admin.role]"/>
             <cm:property name="serviceUrl" value="service:jmx:rmi://localhost:44444/jndi/rmi://localhost:1099/karaf-$[karaf.name]"/>
             <cm:property name="daemon" value="true"/>
             <cm:property name="threaded" value="true"/>
@@ -102,7 +101,6 @@
     <!-- JAAS authenticator -->
     <bean id="jaasAuthenticator" class="org.apache.karaf.management.JaasAuthenticator">
         <property name="realm" value="${jmxRealm}"/>
-        <property name="role" value="${jmxRole}"/>
     </bean>
 
     <!-- For role-based security on the JMX API -->

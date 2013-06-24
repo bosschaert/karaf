@@ -18,11 +18,14 @@ package org.apache.karaf.management;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.security.AccessControlContext;
+import java.security.AccessController;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
 import javax.management.ObjectName;
+import javax.security.auth.Subject;
 
 import org.apache.karaf.jaas.boot.KarafMBeanServerBuilder;
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -53,7 +56,12 @@ public class KarafMBeanServerGuard implements InvocationHandler {
                 System.out.println("**** Guard being invoked:" + method.getName() + "#" + Arrays.toString(args));
                 System.out.println("     Looking in CM: " + configAdmin);
 
+                // pid = "roles.mbean.osgi.compendium.cm // last piece is the first object value
+                // pid = "roles.mbean.org.apache.karaf.system
 
+                AccessControlContext acc = AccessController.getContext();
+                Subject subject = Subject.getSubject(acc);
+                System.out.println("@@@ " + subject);
             }
         }
 
