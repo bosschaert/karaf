@@ -91,6 +91,20 @@ public class KarafMBeanServerBuilderTest extends TestCase {
             // good
         }
 
+        try {
+            kmbs.setAttributes(on, new AttributeList());
+            fail("Should have access denied");
+        } catch (SecurityException se) {
+            // good
+        }
+
+        try {
+            kmbs.invoke(on, "foo", new Object [] {}, new String [] {});
+            fail("Should have access denied");
+        } catch (SecurityException se) {
+            // good
+        }
+
         // Try some MBeanServer operation that are not guarded
         assertTrue(kmbs.getDomains().length > 0);
         assertTrue(kmbs.getMBeanCount() > 0);
