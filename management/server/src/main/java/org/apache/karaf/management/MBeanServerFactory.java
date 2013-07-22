@@ -71,6 +71,7 @@ public class MBeanServerFactory {
     }
 
     public MBeanServer getServer() throws Exception {
+        System.out.println("**** Obtaining MBeanServer");
         if (this.server == null) {
             init();
         }
@@ -112,5 +113,4 @@ public class MBeanServerFactory {
             javax.management.MBeanServerFactory.releaseMBeanServer(this.server);
         }
     }
-
 }
