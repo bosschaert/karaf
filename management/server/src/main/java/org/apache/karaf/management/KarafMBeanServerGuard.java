@@ -209,31 +209,27 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         for (int i = 0; i < key.length(); i++) {
             char c = key.charAt(i);
 
-            if (c == '\"' || c == '/') {
-                if (sb.length() > 0 && sb.charAt(sb.length() - 1) == '[') {
-                    quoteChar = c;
-                }
-            }
-
             if (quoteChar == 0 && c == ' ')
                 continue;
 
-            sb.append(c);
-        }
-
-        // if we're in quotes, walk back from the end and eat off any spaces
-        if (quoteChar != 0) {
-            for (int i = sb.length() - 1; i > 0; i--) {
-                if (sb.charAt(i) == quoteChar) {
-                    if (sb.length() > (i+1) && sb.charAt(i+1) == ']') {
-                        // found the closing quotes, stop this process
-                        return sb.toString();
+            if (quoteChar == 0 && (c == '\"' || c == '/') && sb.length() > 0 &&
+                    (sb.charAt(sb.length() - 1) == '[' || sb.charAt(sb.length() - 1) == ',')) {
+                // we're in a quoted string
+                quoteChar = c;
+            } else if (quoteChar != 0 && c == quoteChar) {
+                // look ahead to see if the next non-space is the closing bracket or a comma, which ends the quoted string
+                for (int j = i + 1; j < key.length(); j++) {
+                    if (key.charAt(j) == ' ') {
+                        continue;
                     }
-                }
-                if (sb.charAt(i) == ' ') {
-                    sb.deleteCharAt(i);
+                    if (key.charAt(j) == ']' || key.charAt(j) == ',') {
+                        quoteChar = 0;
+                    }
+                    break;
                 }
             }
+
+            sb.append(c);
         }
 
         return sb.toString();
@@ -318,17 +314,21 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         StringBuilder curRegExp = new StringBuilder();
         for (int i = 0; i < key.length(); i++) {
             if (!inRegExp) {
-                if ("[/".equals(key.substring(i, i+2))) {
-                    inRegExp = true;
-                    i++;
-                    continue;
+                if (key.length() > i+1) {
+                    String s = key.substring(i, i+2);
+
+                    if ("[/".equals(s) || ",/".equals(s)) {
+                        inRegExp = true;
+                        i++;
+                        continue;
+                    }
                 }
             } else {
-                if ("/]".equals(key.substring(i, i+2))) {
+                String s = key.substring(i, i+2);
+                if ("/]".equals(s) || "/,".equals(s)) {
                     l.add(curRegExp.toString());
                     curRegExp = new StringBuilder();
                     inRegExp = false;
-                    i++;
                     continue;
                 }
                 curRegExp.append(key.charAt(i));
