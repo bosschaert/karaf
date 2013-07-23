@@ -60,7 +60,29 @@ public class KarafMBeanServerGuardTest extends TestCase {
 
         ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
         assertEquals(Collections.singletonList("editor"),
-                guard.getRequiredRoles(on, "testIt", new Object[] {"test"}, new String [] {"java.lang.String", "java.lang.String"}));
+                guard.getRequiredRoles(on, "testIt", new Object[] {"test", "toast"}, new String [] {"java.lang.String", "java.lang.String"}));
+    }
+
+    public void testRequiredRolesExact() throws Exception {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("testIt", "master");
+        configuration.put("testIt( java.lang.String)", "viewer");
+        configuration.put("testIt( java.lang.String ,java.lang.String)", "editor");
+        configuration.put("testIt( java.lang.String ) [\"ab\"]", "manager");
+        configuration.put("testIt( java.lang.String )[\" a b \" ]", "admin");
+        configuration.put("testIt( java.lang.String )[ \" cd \"]  ", "tester");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+        assertEquals(Collections.singletonList("manager"),
+                guard.getRequiredRoles(on, "testIt", new Object[] {"ab"}, new String [] {"java.lang.String"}));
+        assertEquals(Collections.singletonList("admin"),
+                guard.getRequiredRoles(on, "testIt", new Object[] {" a b "}, new String [] {"java.lang.String"}));
+        assertEquals(Collections.singletonList("viewer"),
+                guard.getRequiredRoles(on, "testIt", new Object[] {"cd"}, new String [] {"java.lang.String"}));
     }
 
     private ConfigurationAdmin getMockConfigAdmin(Dictionary<String, Object> configuration) throws IOException,

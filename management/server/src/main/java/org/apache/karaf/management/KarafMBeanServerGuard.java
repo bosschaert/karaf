@@ -205,11 +205,37 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
 
     private String removeSpaces(String key) {
         StringBuilder sb = new StringBuilder();
+        char quoteChar = 0;
         for (int i = 0; i < key.length(); i++) {
             char c = key.charAt(i);
-            if (c != ' ')
-                sb.append(c);
+
+            if (c == '\"' || c == '/') {
+                if (sb.length() > 0 && sb.charAt(sb.length() - 1) == '[') {
+                    quoteChar = c;
+                }
+            }
+
+            if (quoteChar == 0 && c == ' ')
+                continue;
+
+            sb.append(c);
         }
+
+        // if we're in quotes, walk back from the end and eat off any spaces
+        if (quoteChar != 0) {
+            for (int i = sb.length() - 1; i > 0; i--) {
+                if (sb.charAt(i) == quoteChar) {
+                    if (sb.length() > (i+1) && sb.charAt(i+1) == ']') {
+                        // found the closing quotes, stop this process
+                        return sb.toString();
+                    }
+                }
+                if (sb.charAt(i) == ' ') {
+                    sb.deleteCharAt(i);
+                }
+            }
+        }
+
         return sb.toString();
     }
 
