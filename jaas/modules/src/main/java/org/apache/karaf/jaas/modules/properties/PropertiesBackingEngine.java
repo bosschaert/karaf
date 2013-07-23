@@ -30,7 +30,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class PropertiesBackingEngine implements BackingEngine {
-    private static final String GROUP_PREFIX = "_g_:";
+    static final String GROUP_PREFIX = "_g_:";
     private final Logger logger = LoggerFactory.getLogger(PropertiesBackingEngine.class);
 
     private Properties users;

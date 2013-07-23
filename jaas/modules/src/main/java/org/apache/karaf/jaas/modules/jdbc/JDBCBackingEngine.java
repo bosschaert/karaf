@@ -21,6 +21,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import javax.sql.DataSource;
@@ -410,7 +411,8 @@ public class JDBCBackingEngine implements BackingEngine {
 
     @Override
     public List<GroupPrincipal> listGroups(UserPrincipal user) {
-        throw new UnsupportedOperationException();
+        // Support for groups will need to be added.
+        return Collections.emptyList();
     }
 
     @Override

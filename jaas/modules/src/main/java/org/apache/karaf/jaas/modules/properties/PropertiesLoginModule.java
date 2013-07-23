@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.security.Principal;
 import java.util.HashSet;
 import java.util.Map;
+
 import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.CallbackHandler;
@@ -30,18 +31,17 @@ import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.FailedLoginException;
 import javax.security.auth.login.LoginException;
 
+import org.apache.felix.utils.properties.Properties;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.apache.karaf.jaas.boot.principal.UserPrincipal;
-import org.apache.felix.utils.properties.Properties;
 import org.apache.karaf.jaas.modules.AbstractKarafLoginModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class PropertiesLoginModule extends AbstractKarafLoginModule {
-
+    static final String USER_FILE = "users";
     private final Logger LOG = LoggerFactory.getLogger(PropertiesLoginModule.class);
 
-    private static final String USER_FILE = "users";
 
     private String usersFile;
 
@@ -88,7 +88,7 @@ public class PropertiesLoginModule extends AbstractKarafLoginModule {
         String userInfos = null;
 
         try {
-            userInfos = (String) users.get(user);
+            userInfos = users.get(user);
         } catch (NullPointerException e) {
             //error handled in the next statement
         }
@@ -99,11 +99,11 @@ public class PropertiesLoginModule extends AbstractKarafLoginModule {
         		throw new FailedLoginException("User " + user + " does not exist");
         	}
         }
-        
+
         // the password is in the first position
         String[] infos = userInfos.split(",");
         String storedPassword = infos[0];
-        
+
         // check if the stored password is flagged as encrypted
         String encryptedPassword = getEncryptedPassword(storedPassword);
         if (!storedPassword.equals(encryptedPassword)) {
