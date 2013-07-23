@@ -16,6 +16,20 @@
  */
 package org.apache.karaf.management.mbeans.system.internal;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.security.AccessControlContext;
+import java.security.AccessController;
+import java.security.Principal;
+import java.util.Calendar;
+import java.util.GregorianCalendar;
+import java.util.Set;
+
+import javax.management.NotCompliantMBeanException;
+import javax.management.StandardMBean;
+import javax.security.auth.Subject;
+
 import org.apache.felix.utils.properties.Properties;
 import org.apache.karaf.management.mbeans.system.SystemMBean;
 import org.osgi.framework.Bundle;
@@ -23,14 +37,6 @@ import org.osgi.framework.BundleContext;
 import org.osgi.framework.startlevel.FrameworkStartLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.management.NotCompliantMBeanException;
-import javax.management.StandardMBean;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
 
 /**
  * System MBean implementation.
@@ -46,6 +52,16 @@ public class SystemMBeanImpl extends StandardMBean implements SystemMBean {
     }
 
     public String getName() {
+        /* */ System.out.println("Calling SystemMBean.getName()");
+        /* */
+        AccessControlContext acc = AccessController.getContext();
+        System.out.println("AccessControlContext: " + acc);
+        Subject subject = Subject.getSubject(acc);
+        System.out.println("Subject: " + subject);
+        Set<Principal> principals = subject.getPrincipals();
+        System.out.println("Principals: " + principals);
+        /* */
+
         return bundleContext.getProperty("karaf.name");
     }
 
@@ -118,13 +134,13 @@ public class SystemMBeanImpl extends StandardMBean implements SystemMBean {
 
     public void setStartLevel(int startLevel) {
         Bundle b = getBundleContext().getBundle(0);
-        FrameworkStartLevel fsl = (FrameworkStartLevel) b.adapt(FrameworkStartLevel.class);
+        FrameworkStartLevel fsl = b.adapt(FrameworkStartLevel.class);
         fsl.setStartLevel(startLevel, null);
     }
 
     public int getStartLevel() {
         Bundle b = getBundleContext().getBundle(0);
-        FrameworkStartLevel fsl = (FrameworkStartLevel) b.adapt(FrameworkStartLevel.class);
+        FrameworkStartLevel fsl = b.adapt(FrameworkStartLevel.class);
         return fsl.getStartLevel();
     }
 
