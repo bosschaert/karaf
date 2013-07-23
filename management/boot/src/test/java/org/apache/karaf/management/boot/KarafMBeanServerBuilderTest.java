@@ -34,10 +34,10 @@ import org.easymock.EasyMock;
 public class KarafMBeanServerBuilderTest extends TestCase {
     public void testMBeanServerBuilderBlocking() throws Exception {
         MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.replay(mbs);
 
         KarafMBeanServerBuilder mbsb = new KarafMBeanServerBuilder();
         MBeanServer kmbs = mbsb.newMBeanServer("test", mbs, null);
-
 
         final List<Object> handlerArgs = new ArrayList<Object>();
         InvocationHandler guard = new InvocationHandler() {
@@ -113,6 +113,7 @@ public class KarafMBeanServerBuilderTest extends TestCase {
 
     public void testMBeanServerBuilderNonBlocking() throws Exception {
         MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.replay(mbs);
 
         KarafMBeanServerBuilder mbsb = new KarafMBeanServerBuilder();
         MBeanServer kmbs = mbsb.newMBeanServer("test", mbs, null);

@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Dictionary;
 import java.util.Enumeration;
+import java.util.Hashtable;
 import java.util.List;
 
 import javax.management.Attribute;
@@ -102,7 +103,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
 
     }
 
-    private void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
+    void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
         for (String role : getRequiredRoles(objectName, operationName, params, signature)) {
             if (currentUserHasRole(role)) {
                 return;
@@ -138,7 +139,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         return false;
     }
 
-    private List<String> getRequiredRoles(ObjectName objectName, String methodName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
+    List<String> getRequiredRoles(ObjectName objectName, String methodName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
         List<String> roles = new ArrayList<String>();
         List<String> segs = getNameSegments(objectName);
 
@@ -152,6 +153,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             pid = "jmx.acl." + pid;
             if (allPids.contains(pid)) {
                 Configuration config = configAdmin.getConfiguration(pid);
+                Dictionary<String, Object> properties = trimKeys(config.getProperties());
 
                 /*
                 1. get all direct string matches
@@ -160,35 +162,63 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                 4. without signature
                  */
 
-                Object exactArgMatchRoles = config.getProperties().get(getExactArgSignature(methodName, signature, params));
+                Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
                 if (exactArgMatchRoles instanceof String) {
                     roles.addAll(parseRoles((String) exactArgMatchRoles));
                 }
 
-                List<String> regexpRoles = getRegExpRoles(config.getProperties(), methodName, signature, params);
+                List<String> regexpRoles = getRegExpRoles(properties, methodName, signature, params);
                 if (regexpRoles.size() > 0) {
                     roles.addAll(regexpRoles);
                 }
                 if (roles.size() > 0)
-                    continue;
+                    return roles;
 
-                Object signatureRoles = config.getProperties().get(getSignature(methodName, signature));
+                Object signatureRoles = properties.get(getSignature(methodName, signature));
                 if (signatureRoles instanceof String) {
                     roles.addAll(parseRoles((String) signatureRoles));
-                    continue;
+                    if (roles.size() > 0)
+                        return roles;
                 }
 
-                Object methodRoles = config.getProperties().get(methodName);
+                Object methodRoles = properties.get(methodName);
                 if (methodRoles instanceof String) {
                     roles.addAll(parseRoles((String) methodRoles));
                 }
+                if (roles.size() > 0)
+                    return roles;
             }
         }
         return roles;
     }
 
+    private Dictionary<String, Object> trimKeys(Dictionary<String, Object> properties) {
+        Dictionary<String, Object> d = new Hashtable<String, Object>();
+        for (Enumeration<String> e = properties.keys(); e.hasMoreElements(); ) {
+            String key = e.nextElement();
+            Object value = properties.get(key);
+
+            d.put(removeSpaces(key), value);
+        }
+        return d;
+    }
+
+    private String removeSpaces(String key) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < key.length(); i++) {
+            char c = key.charAt(i);
+            if (c != ' ')
+                sb.append(c);
+        }
+        return sb.toString();
+    }
+
     private List<String> parseRoles(String roleStr) {
-        return Arrays.asList(roleStr.split("[,]"));
+        List<String> roles = new ArrayList<String>();
+        for (String role : roleStr.split("[,]")) {
+            roles.add(role.trim());
+        }
+        return roles;
     }
 
     private Object getExactArgSignature(String methodName, String[] signature, Object[] params) {
