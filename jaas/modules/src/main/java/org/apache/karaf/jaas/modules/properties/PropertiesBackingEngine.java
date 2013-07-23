@@ -101,6 +101,11 @@ public class PropertiesBackingEngine implements BackingEngine {
 
     @Override
     public void deleteUser(String username) {
+        // Delete all it's groups first, for garbage collection of the groups
+        for (GroupPrincipal gp : listGroups(username)) {
+            deleteGroup(username, gp.getName());
+        }
+
         users.remove(username);
 
         try {
@@ -203,8 +208,13 @@ public class PropertiesBackingEngine implements BackingEngine {
 
     @Override
     public List<GroupPrincipal> listGroups(UserPrincipal user) {
+        String userName = user.getName();
+        return listGroups(userName);
+    }
+
+    private List<GroupPrincipal> listGroups(String userName) {
         List<GroupPrincipal> result = new ArrayList<GroupPrincipal>();
-        String userInfo = users.get(user.getName());
+        String userInfo = users.get(userName);
         String[] infos = userInfo.split(",");
         for (int i = 1; i < infos.length; i++) {
             String name = infos[i];
