@@ -17,17 +17,26 @@
 package org.apache.karaf.management;
 
 import java.io.IOException;
+import java.security.Principal;
+import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import javax.management.ObjectName;
+import javax.security.auth.Subject;
+import javax.security.auth.callback.CallbackHandler;
+import javax.security.auth.login.LoginException;
+import javax.security.auth.spi.LoginModule;
 
 import junit.framework.TestCase;
 
+import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.easymock.EasyMock;
 import org.osgi.framework.Constants;
 import org.osgi.framework.InvalidSyntaxException;
@@ -235,6 +244,38 @@ public class KarafMBeanServerGuardTest extends TestCase {
         return ca;
     }
 
+    public void testCurrentUserHasRole() throws Exception {
+        Subject subject = new Subject();
+        LoginModule lm = new TestLoginModule("test");
+        lm.initialize(subject, null, null, null);
+        lm.login();
+        lm.commit();
+
+        Subject.doAs(subject, new PrivilegedAction<String>() {
+            public String run() {
+                assertTrue(KarafMBeanServerGuard.currentUserHasRole("test"));
+                assertFalse(KarafMBeanServerGuard.currentUserHasRole("toast"));
+                return null;
+            }
+        });
+    }
+
+    public void testCurrentUserHasCustomRole() throws Exception {
+        Subject subject = new Subject();
+        LoginModule lm = new TestLoginModule(new TestRolePrincipal("foo"));
+        lm.initialize(subject, null, null, null);
+        lm.login();
+        lm.commit();
+
+        Subject.doAs(subject, new PrivilegedAction<String>() {
+            public String run() {
+                assertTrue(KarafMBeanServerGuard.currentUserHasRole(TestRolePrincipal.class.getCanonicalName() + ":foo"));
+                assertFalse(KarafMBeanServerGuard.currentUserHasRole("foo"));
+                return null;
+            }
+        });
+    }
+
     /*
     public void xxtestKarafMBeanServerGuard() throws Exception {
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
@@ -246,4 +287,50 @@ public class KarafMBeanServerGuardTest extends TestCase {
         guard.handleInvoke(on, "doit", new Object[] {}, new String [] {});
     }
     */
+    private static class TestLoginModule implements LoginModule {
+        private final Principal [] principals;
+        private Subject subject;
+
+        private static Principal [] getPrincipals(String... roles) {
+            List<Principal> principals = new ArrayList<Principal>();
+            for (String role : roles) {
+                principals.add(new RolePrincipal(role));
+            }
+            return principals.toArray(new Principal [] {});
+        }
+
+
+        public TestLoginModule(String ... roles) {
+            this(getPrincipals(roles));
+        }
+
+        public TestLoginModule(Principal ... principals) {
+            this.principals = principals;
+        }
+
+        public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState, Map<String, ?> options) {
+            this.subject = subject;
+        }
+
+        public boolean login() throws LoginException {
+            return true;
+        }
+
+        public boolean commit() throws LoginException {
+            Set<Principal> sp = subject.getPrincipals();
+            sp.addAll(Arrays.asList(principals));
+            return true;
+        }
+
+        public boolean abort() throws LoginException {
+            return true;
+        }
+
+        public boolean logout() throws LoginException {
+            Set<Principal> sp = subject.getPrincipals();
+            sp.removeAll(Arrays.asList(principals));
+            return true;
+        }
+    }
+
 }

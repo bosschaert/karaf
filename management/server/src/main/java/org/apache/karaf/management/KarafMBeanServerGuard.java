@@ -116,33 +116,6 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         throw new SecurityException("Insufficient credentials for operation.");
     }
 
-    private boolean currentUserHasRole(String reqRole) {
-        String clazz;
-        String role;
-        int idx = reqRole.indexOf(':');
-        if (idx > 0) {
-            clazz = reqRole.substring(0, idx);
-            role = reqRole.substring(idx + 1);
-        } else {
-            clazz = RolePrincipal.class.getName();
-            role = reqRole;
-        }
-
-        AccessControlContext acc = AccessController.getContext();
-        if (acc == null)
-            return false;
-        Subject subject = Subject.getSubject(acc);
-        if (subject == null)
-            return false;
-
-        for (Principal p : subject.getPrincipals()) {
-            if (clazz.equals(p.getClass().getName()) && role.equals(p.getName())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     List<String> getRequiredRoles(ObjectName objectName, String methodName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
         List<String> roles = new ArrayList<String>();
         List<String> segs = getNameSegments(objectName);
@@ -397,5 +370,32 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             pids.add(sb.toString());
         }
         return pids;
+    }
+
+    static boolean currentUserHasRole(String reqRole) {
+        String clazz;
+        String role;
+        int idx = reqRole.indexOf(':');
+        if (idx > 0) {
+            clazz = reqRole.substring(0, idx);
+            role = reqRole.substring(idx + 1);
+        } else {
+            clazz = RolePrincipal.class.getName();
+            role = reqRole;
+        }
+
+        AccessControlContext acc = AccessController.getContext();
+        if (acc == null)
+            return false;
+        Subject subject = Subject.getSubject(acc);
+        if (subject == null)
+            return false;
+
+        for (Principal p : subject.getPrincipals()) {
+            if (clazz.equals(p.getClass().getName()) && role.equals(p.getName())) {
+                return true;
+            }
+        }
+        return false;
     }
 }
