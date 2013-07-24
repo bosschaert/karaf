@@ -23,7 +23,6 @@ import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Dictionary;
 import java.util.Enumeration;
 import java.util.Hashtable;
@@ -340,9 +339,11 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
 
     private List<String> getNameSegments(ObjectName objectName) {
         List<String> segs = new ArrayList<String>();
-        segs.addAll(Arrays.asList(objectName.getDomain().split("[.]")));
+        // segs.addAll(Arrays.asList(objectName.getDomain().split("[.]")));
+        segs.add(objectName.getDomain());
 
         // TODO can an object name property contain a comma as key or value?
+        // TODO support quoting as described in http://docs.oracle.com/javaee/1.4/api/javax/management/ObjectName.html
         for (String s : objectName.getKeyPropertyListString().split("[,]")) {
             int idx = s.indexOf('=');
             if (idx < 0)

@@ -17,16 +17,19 @@
 package org.apache.karaf.management;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Dictionary;
 import java.util.Hashtable;
+import java.util.List;
 
 import javax.management.ObjectName;
 
 import junit.framework.TestCase;
 
 import org.easymock.EasyMock;
+import org.osgi.framework.Constants;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -149,21 +152,71 @@ public class KarafMBeanServerGuardTest extends TestCase {
                 guard.getRequiredRoles(on, "foo", new Object[] {"b", "b"}, new String [] {"java.lang.String", "java.lang.String"}));
     }
 
+    @SuppressWarnings("unchecked")
+    public void testRequiredRolesHierarchy() throws Exception {
+        Dictionary<String, Object> conf1 = new Hashtable<String, Object>();
+        conf1.put("foo", "editor");
+        conf1.put(Constants.SERVICE_PID, "jmx.acl.foo.bar.Test");
+        Dictionary<String, Object> conf2 = new Hashtable<String, Object>();
+        conf2.put("bar", "viewer");
+        conf2.put("foo", "viewer");
+        conf2.put(Constants.SERVICE_PID, "jmx.acl.foo.bar");
+        Dictionary<String, Object> conf3 = new Hashtable<String, Object>();
+        conf3.put("tar", "admin");
+        conf3.put(Constants.SERVICE_PID, "jmx.acl.foo");
+        Dictionary<String, Object> conf4 = new Hashtable<String, Object>();
+        conf4.put("zar", "visitor");
+        conf4.put(Constants.SERVICE_PID, "jmx.acl");
+
+        ConfigurationAdmin ca = getMockConfigAdmin2(conf1, conf2, conf3, conf4);
+        assertEquals("Precondition", 4, ca.listConfigurations(null).length);
+
+        KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+        assertEquals("Should only return the most specific definition",
+                Collections.singletonList("editor"),
+                guard.getRequiredRoles(on, "foo", new Object[] {}, new String [] {}));
+        assertEquals(Collections.singletonList("viewer"),
+                guard.getRequiredRoles(on, "bar", new Object[] {"test"}, new String [] {"java.lang.String"}));
+        assertEquals("The top-level is the domain, subsections of the domain should not be searched",
+                Collections.emptyList(),
+                guard.getRequiredRoles(on, "tar", new Object[] {}, new String [] {}));
+        assertEquals("The top-level is the domain, subsections of the domain should not be searched",
+                Collections.emptyList(),
+                guard.getRequiredRoles(on, "zar", new Object[] {}, new String [] {}));
+    }
+
+    @SuppressWarnings("unchecked")
     private ConfigurationAdmin getMockConfigAdmin(Dictionary<String, Object> configuration) throws IOException,
             InvalidSyntaxException {
-        Configuration conf = EasyMock.createMock(Configuration.class);
-        EasyMock.expect(conf.getPid()).andReturn("jmx.acl.foo.bar.Test").anyTimes();
-        EasyMock.expect(conf.getProperties()).andReturn(configuration).anyTimes();
-        EasyMock.replay(conf);
+        configuration.put(Constants.SERVICE_PID, "jmx.acl.foo.bar.Test");
+        return getMockConfigAdmin2(configuration);
+    }
+
+    private ConfigurationAdmin getMockConfigAdmin2(Dictionary<String, Object> ... configurations) throws IOException,
+        InvalidSyntaxException {
+        List<Configuration> allConfigs = new ArrayList<Configuration>();
+        for (Dictionary<String, Object> configuration : configurations) {
+            Configuration conf = EasyMock.createMock(Configuration.class);
+            EasyMock.expect(conf.getPid()).andReturn((String) configuration.get(Constants.SERVICE_PID)).anyTimes();
+            EasyMock.expect(conf.getProperties()).andReturn(configuration).anyTimes();
+            EasyMock.replay(conf);
+            allConfigs.add(conf);
+        }
 
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
-        EasyMock.expect(ca.getConfiguration("jmx.acl.foo.bar.Test")).andReturn(conf).anyTimes();
+        for (Configuration c : allConfigs) {
+            EasyMock.expect(ca.getConfiguration(c.getPid())).andReturn(c).anyTimes();
+        }
         EasyMock.expect(ca.listConfigurations((String) EasyMock.anyObject())).andReturn(
-                new Configuration [] {conf}).anyTimes();
+                allConfigs.toArray(new Configuration [] {})).anyTimes();
         EasyMock.replay(ca);
         return ca;
     }
 
+    /*
     public void xxtestKarafMBeanServerGuard() throws Exception {
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
 
@@ -173,5 +226,5 @@ public class KarafMBeanServerGuardTest extends TestCase {
         ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
         guard.handleInvoke(on, "doit", new Object[] {}, new String [] {});
     }
-
+    */
 }
