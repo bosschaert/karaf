@@ -23,10 +23,15 @@ import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Dictionary;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 import javax.management.Attribute;
 import javax.management.AttributeList;
@@ -159,6 +164,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                 2. get regexp matches
                 3. get signature matches
                 4. without signature
+                5. method name wildcard
                  */
 
                 Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
@@ -166,10 +172,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                     roles.addAll(parseRoles((String) exactArgMatchRoles));
                 }
 
-                List<String> regexpRoles = getRegExpRoles(properties, methodName, signature, params);
-                if (regexpRoles.size() > 0) {
-                    roles.addAll(regexpRoles);
-                }
+                roles.addAll(getRegExpRoles(properties, methodName, signature, params));
                 if (roles.size() > 0)
                     return roles;
 
@@ -186,6 +189,11 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                 }
                 if (roles.size() > 0)
                     return roles;
+
+                roles.addAll(getMethodNameWildcardRoles(properties, methodName));
+                if (roles.size() > 0)
+                    return roles;
+
             }
         }
         return roles;
@@ -292,6 +300,28 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             }
         }
         return roles;
+    }
+
+    private List<String> getMethodNameWildcardRoles(Dictionary<String, Object> properties, String methodName) {
+        SortedMap<String, Object> wildcardRules = new TreeMap<String, Object>(new Comparator<String>() {
+            public int compare(String s1, String s2) {
+                // Returns longer entries before shorter ones...
+                return s2.length() - s1.length();
+            }
+        });
+        for (Enumeration<String> e = properties.keys(); e.hasMoreElements(); ) {
+            String key = e.nextElement();
+            if (key.endsWith("*")) {
+                wildcardRules.put(key.substring(0, key.length() - 1), properties.get(key));
+            }
+        }
+
+        for (Map.Entry<String, Object> e : wildcardRules.entrySet()) {
+            if (methodName.startsWith(e.getKey())) {
+                return parseRoles(e.getValue().toString());
+            }
+        }
+        return Collections.emptyList();
     }
 
     private boolean allParamsMatch(List<String> regexpArgs, Object[] params) {

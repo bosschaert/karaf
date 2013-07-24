@@ -188,6 +188,25 @@ public class KarafMBeanServerGuardTest extends TestCase {
                 guard.getRequiredRoles(on, "zar", new Object[] {}, new String [] {}));
     }
 
+    public void testRequiredRolesMethodNameWildcard() throws Exception {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("getFoo", "viewer");
+        configuration.put("get*", " tester , editor,manager");
+        configuration.put("*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+        assertEquals(Collections.singletonList("viewer"),
+                guard.getRequiredRoles(on, "getFoo", new Object[] {}, new String [] {}));
+        assertEquals(Arrays.asList("tester", "editor", "manager"),
+                guard.getRequiredRoles(on, "getBar", new Object[] {}, new String [] {}));
+        assertEquals(Collections.singletonList("admin"),
+                guard.getRequiredRoles(on, "test", new Object[] {new Long(17)}, new String [] {"java.lang.Long"}));
+    }
+
     @SuppressWarnings("unchecked")
     private ConfigurationAdmin getMockConfigAdmin(Dictionary<String, Object> configuration) throws IOException,
             InvalidSyntaxException {
