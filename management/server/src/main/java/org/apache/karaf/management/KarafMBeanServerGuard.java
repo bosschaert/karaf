@@ -35,6 +35,10 @@ import java.util.TreeMap;
 
 import javax.management.Attribute;
 import javax.management.AttributeList;
+import javax.management.JMException;
+import javax.management.MBeanAttributeInfo;
+import javax.management.MBeanInfo;
+import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import javax.security.auth.Subject;
 
@@ -72,9 +76,9 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         } else if ("getAttributes".equals(method.getName())) {
             handleGetAttributes(objectName, (String[]) args[1]);
         } else if ("setAttribute".equals(method.getName())) {
-            handleSetAttribute(objectName, (Attribute) args[1]);
+            handleSetAttribute((MBeanServer) proxy, objectName, (Attribute) args[1]);
         } else if ("setAttributes".equals(method.getName())) {
-            handleSetAttributes(objectName, (AttributeList) args[1]);
+            handleSetAttributes((MBeanServer) proxy, objectName, (AttributeList) args[1]);
         } else if ("invoke".equals(method.getName())) {
             handleInvoke(objectName, (String) args[1], (Object[]) args[2], (String[]) args[3]);
         }
@@ -92,14 +96,26 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         }
     }
 
-    private void handleSetAttribute(ObjectName objectName, Attribute attribute) {
-        // TODO Auto-generated method stub
+    private void handleSetAttribute(MBeanServer proxy, ObjectName objectName, Attribute attribute) throws JMException, IOException, InvalidSyntaxException {
+        String dataType = null;
+        MBeanInfo info = proxy.getMBeanInfo(objectName);
+        for (MBeanAttributeInfo attr : info.getAttributes()) {
+            if (attr.getName().equals(attribute.getName())) {
+                dataType = attr.getType();
+                break;
+            }
+        }
 
+        if (dataType == null)
+            throw new IllegalStateException("Attribute data type could not be found");
+
+        handleInvoke(objectName, "set" + attribute.getName(), new Object [] {attribute.getValue()}, new String [] {dataType});
     }
 
-    private void handleSetAttributes(ObjectName objectName, AttributeList attributes) {
-        // TODO Auto-generated method stub
-
+    private void handleSetAttributes(MBeanServer proxy, ObjectName objectName, AttributeList attributes) throws JMException, IOException, InvalidSyntaxException {
+        for (Attribute attr : attributes.asList()) {
+            handleSetAttribute(proxy, objectName, attr);
+        }
     }
 
     void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {

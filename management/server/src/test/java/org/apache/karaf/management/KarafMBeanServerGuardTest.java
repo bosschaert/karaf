@@ -29,6 +29,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.management.Attribute;
+import javax.management.AttributeList;
+import javax.management.MBeanAttributeInfo;
+import javax.management.MBeanInfo;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import javax.security.auth.Subject;
@@ -386,17 +390,123 @@ public class KarafMBeanServerGuardTest extends TestCase {
             }
         });
     }
-    /*
-    public void xxtestKarafMBeanServerGuard() throws Exception {
-        ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
 
-        KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+    public void testSetAttribute() throws Throwable {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo a1 = new MBeanAttributeInfo("Something", "java.lang.String", "Something Attribute", true, true, false);
+        MBeanAttributeInfo a2 = new MBeanAttributeInfo("Value", "long", "Value Attribute", true, true, false);
+        MBeanAttributeInfo a3 = new MBeanAttributeInfo("Other", "boolean", "Other Attribute", true, true, false);
+        MBeanAttributeInfo[] attrs = new MBeanAttributeInfo[] {a1, a2, a3};
+
+        MBeanInfo mbeanInfo = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(mbeanInfo.getAttributes()).andReturn(attrs).anyTimes();
+        EasyMock.replay(mbeanInfo);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(mbeanInfo).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("setSomething", "editor");
+        configuration.put("setValue*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
         guard.setConfigAdmin(ca);
 
-        ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
-        guard.handleInvoke(on, "doit", new Object[] {}, new String [] {});
+        Subject subject = loginWithTestRoles("editor", "admin");
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    Method im = MBeanServer.class.getMethod("setAttribute", ObjectName.class, Attribute.class);
+
+                    // The following operations should not throw an exception
+                    guard.invoke(mbs, im, new Object [] {on, new Attribute("Something", "v1")});
+                    guard.invoke(mbs, im, new Object [] {on, new Attribute("Value", 42L)});
+
+                    try {
+                        guard.invoke(mbs, im, new Object [] {on, new Attribute("Other", Boolean.TRUE)});
+                        fail("Should not have allowed the invocation");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+
+                    try {
+                        guard.invoke(mbs, im, new Object [] {on, new Attribute("NonExistent", "v4")});
+                        fail("Should not have found the MBean Declaration");
+                    } catch (IllegalStateException ise) {
+                        // good
+                    }
+
+                    return null;
+                } catch (Throwable ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
     }
-    */
+
+    public void testSetAttributes() throws Throwable {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo mba1 = new MBeanAttributeInfo("Something", "java.lang.String", "Something Attribute", true, true, false);
+        MBeanAttributeInfo mba2 = new MBeanAttributeInfo("Value", "long", "Value Attribute", true, true, false);
+        MBeanAttributeInfo mba3 = new MBeanAttributeInfo("Other", "boolean", "Other Attribute", true, true, false);
+        MBeanAttributeInfo[] attrs = new MBeanAttributeInfo[] {mba1, mba2, mba3};
+
+        MBeanInfo mbeanInfo = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(mbeanInfo.getAttributes()).andReturn(attrs).anyTimes();
+        EasyMock.replay(mbeanInfo);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(mbeanInfo).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("setSomething", "editor");
+        configuration.put("setValue*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("editor", "admin");
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    Method im = MBeanServer.class.getMethod("setAttributes", ObjectName.class, AttributeList.class);
+
+                    // The following operations should not throw an exception
+                    Attribute a1 = new Attribute("Something", "v1");
+                    Attribute a2 = new Attribute("Value", 42L);
+                    guard.invoke(mbs, im, new Object [] {on, new AttributeList(Arrays.asList(a1))});
+                    guard.invoke(mbs, im, new Object [] {on, new AttributeList(Arrays.asList(a2, a1))});
+
+                    Attribute a3 = new Attribute("Other", Boolean.TRUE);
+                    try {
+                        guard.invoke(mbs, im, new Object [] {on, new AttributeList(Arrays.asList(a1, a3))});
+                        fail("Should not have allowed the invocation");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+
+                    try {
+                        Attribute a4 = new Attribute("NonExistent", "v4");
+                        guard.invoke(mbs, im, new Object [] {on, new AttributeList(Arrays.asList(a4))});
+                        fail("Should not have found the MBean Declaration");
+                    } catch (IllegalStateException ise) {
+                        // good
+                    }
+
+                    return null;
+                } catch (Throwable ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+    }
+
     private Subject loginWithTestRoles(String ... roles) throws LoginException {
         Subject subject = new Subject();
         LoginModule lm = new TestLoginModule(roles);
