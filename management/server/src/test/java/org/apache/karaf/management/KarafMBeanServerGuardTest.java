@@ -315,6 +315,77 @@ public class KarafMBeanServerGuardTest extends TestCase {
         });
     }
 
+    public void testGetAttribute() throws Throwable {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("getToast", "editor");
+        configuration.put("getTest*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("editor", "admin");
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    Method im = MBeanServer.class.getMethod("getAttribute", ObjectName.class, String.class);
+
+                    ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+                    // The following operations should not throw an exception
+                    guard.invoke(null, im, new Object [] {on, "Toast"});
+                    guard.invoke(null, im, new Object [] {on, "TestAttr"});
+
+                    try {
+                        guard.invoke(null, im, new Object [] {on, "Butter"});
+                        fail("Should not have allowed the invocation");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+
+                    return null;
+                } catch (Throwable ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+    }
+
+    public void testGetAttributes() throws Throwable {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("getToast", "editor");
+        configuration.put("getTest*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("editor", "admin");
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    Method im = MBeanServer.class.getMethod("getAttributes", ObjectName.class, String[].class);
+
+                    ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+                    // The following operations should not throw an exception
+                    guard.invoke(null, im, new Object [] {on, new String [] {"Toast"}});
+                    guard.invoke(null, im, new Object [] {on, new String [] {"TestSomething", "Toast"}});
+
+                    try {
+                        guard.invoke(null, im, new Object [] {on, new String [] {"Butter", "Toast"}});
+                        fail("Should not have allowed the invocation");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+
+                    return null;
+                } catch (Throwable ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+    }
     /*
     public void xxtestKarafMBeanServerGuard() throws Exception {
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);

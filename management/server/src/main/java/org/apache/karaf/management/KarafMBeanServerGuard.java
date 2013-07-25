@@ -56,7 +56,6 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     public void init() {
-        System.out.println("**** Initializing guard...");
         KarafMBeanServerBuilder.init(this);
     }
 
@@ -67,9 +66,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         if (!ObjectName.class.isAssignableFrom(method.getParameterTypes()[0]))
             return null;
 
-        // System.out.println("**** Guard being invoked:" + method.getName() + "#" + Arrays.toString(args));
         ObjectName objectName = (ObjectName) args[0];
-        //if (objectName.getCanonicalName().startsWith("org.apache.karaf")) {
         if ("getAttribute".equals(method.getName())) {
             handleGetAttribute(objectName, (String) args[1]);
         } else if ("getAttributes".equals(method.getName())) {
@@ -82,19 +79,17 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             handleInvoke(objectName, (String) args[1], (Object[]) args[2], (String[]) args[3]);
         }
 
-        // }
-
         return null;
     }
 
-    private void handleGetAttribute(ObjectName objectName, String attributeName) {
-        // TODO Auto-generated method stub
-
+    private void handleGetAttribute(ObjectName objectName, String attributeName) throws IOException, InvalidSyntaxException {
+        handleInvoke(objectName, "get" + attributeName, new Object [] {}, new String [] {});
     }
 
-    private void handleGetAttributes(ObjectName objectName, String[] attributeNames) {
-        // TODO Auto-generated method stub
-
+    private void handleGetAttributes(ObjectName objectName, String[] attributeNames) throws IOException, InvalidSyntaxException {
+        for (String attr : attributeNames) {
+            handleGetAttribute(objectName, attr);
+        }
     }
 
     private void handleSetAttribute(ObjectName objectName, Attribute attribute) {
