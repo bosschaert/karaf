@@ -69,20 +69,20 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
 
         // System.out.println("**** Guard being invoked:" + method.getName() + "#" + Arrays.toString(args));
         ObjectName objectName = (ObjectName) args[0];
-        if (objectName.getCanonicalName().startsWith("org.apache.karaf")) {
-            if ("getAttribute".equals(method.getName())) {
-                handleGetAttribute(objectName, (String) args[1]);
-            } else if ("getAttributes".equals(method.getName())) {
-                handleGetAttributes(objectName, (String[]) args[1]);
-            } else if ("setAttribute".equals(method.getName())) {
-                handleSetAttribute(objectName, (Attribute) args[1]);
-            } else if ("setAttributes".equals(method.getName())) {
-                handleSetAttributes(objectName, (AttributeList) args[1]);
-            } else if ("invoke".equals(method.getName())) {
-                handleInvoke(objectName, (String) args[1], (Object[]) args[2], (String[]) args[3]);
-            }
-
+        //if (objectName.getCanonicalName().startsWith("org.apache.karaf")) {
+        if ("getAttribute".equals(method.getName())) {
+            handleGetAttribute(objectName, (String) args[1]);
+        } else if ("getAttributes".equals(method.getName())) {
+            handleGetAttributes(objectName, (String[]) args[1]);
+        } else if ("setAttribute".equals(method.getName())) {
+            handleSetAttribute(objectName, (Attribute) args[1]);
+        } else if ("setAttributes".equals(method.getName())) {
+            handleSetAttributes(objectName, (AttributeList) args[1]);
+        } else if ("invoke".equals(method.getName())) {
+            handleInvoke(objectName, (String) args[1], (Object[]) args[2], (String[]) args[3]);
         }
+
+        // }
 
         return null;
     }

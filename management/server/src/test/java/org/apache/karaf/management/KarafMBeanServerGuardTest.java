@@ -17,6 +17,7 @@
 package org.apache.karaf.management;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.security.Principal;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import javax.security.auth.Subject;
 import javax.security.auth.callback.CallbackHandler;
@@ -245,14 +247,10 @@ public class KarafMBeanServerGuardTest extends TestCase {
     }
 
     public void testCurrentUserHasRole() throws Exception {
-        Subject subject = new Subject();
-        LoginModule lm = new TestLoginModule("test");
-        lm.initialize(subject, null, null, null);
-        lm.login();
-        lm.commit();
+        Subject subject = loginWithTestRoles("test");
 
-        Subject.doAs(subject, new PrivilegedAction<String>() {
-            public String run() {
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
                 assertTrue(KarafMBeanServerGuard.currentUserHasRole("test"));
                 assertFalse(KarafMBeanServerGuard.currentUserHasRole("toast"));
                 return null;
@@ -267,11 +265,52 @@ public class KarafMBeanServerGuardTest extends TestCase {
         lm.login();
         lm.commit();
 
-        Subject.doAs(subject, new PrivilegedAction<String>() {
-            public String run() {
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
                 assertTrue(KarafMBeanServerGuard.currentUserHasRole(TestRolePrincipal.class.getCanonicalName() + ":foo"));
                 assertFalse(KarafMBeanServerGuard.currentUserHasRole("foo"));
                 return null;
+            }
+        });
+    }
+
+    public void testInvoke() throws Throwable {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("someMethod", "editor");
+        configuration.put("someOtherMethod", "viewer");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("editor", "admin");
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    Method im = MBeanServer.class.getMethod("invoke", ObjectName.class, String.class, Object[].class, String[].class);
+
+                    ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+                    // The following operation should not throw an exception
+                    guard.invoke(null, im, new Object [] {on, "someMethod", new Object [] {"test"}, new String [] {"java.lang.String"}});
+
+                    try {
+                        guard.invoke(null, im, new Object [] {on, "someOtherMethod", new Object [] {}, new String [] {}});
+                        fail("Should not have allowed the invocation");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+
+                    try {
+                        guard.invoke(null, im, new Object [] {on, "somemethingElse", new Object [] {}, new String [] {}});
+                        fail("Should not have allowed the invocation");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+                    return null;
+                } catch (Throwable ex) {
+                    throw new RuntimeException(ex);
+                }
             }
         });
     }
@@ -287,6 +326,15 @@ public class KarafMBeanServerGuardTest extends TestCase {
         guard.handleInvoke(on, "doit", new Object[] {}, new String [] {});
     }
     */
+    private Subject loginWithTestRoles(String ... roles) throws LoginException {
+        Subject subject = new Subject();
+        LoginModule lm = new TestLoginModule(roles);
+        lm.initialize(subject, null, null, null);
+        lm.login();
+        lm.commit();
+        return subject;
+    }
+
     private static class TestLoginModule implements LoginModule {
         private final Principal [] principals;
         private Subject subject;
@@ -332,5 +380,4 @@ public class KarafMBeanServerGuardTest extends TestCase {
             return true;
         }
     }
-
 }
