@@ -198,8 +198,7 @@ public class KarafMBeanServerGuardTest extends TestCase {
         assertEquals("The top-level is the domain, subsections of the domain should not be searched",
                 Collections.emptyList(),
                 guard.getRequiredRoles(on, "tar", new Object[] {}, new String [] {}));
-        assertEquals("The top-level is the domain, subsections of the domain should not be searched",
-                Collections.emptyList(),
+        assertEquals(Collections.singletonList("visitor"),
                 guard.getRequiredRoles(on, "zar", new Object[] {}, new String [] {}));
     }
 

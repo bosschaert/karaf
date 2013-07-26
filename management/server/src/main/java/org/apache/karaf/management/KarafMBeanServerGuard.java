@@ -29,7 +29,6 @@ import java.util.Dictionary;
 import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.List;
-import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
@@ -49,6 +48,7 @@ import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 
 public final class KarafMBeanServerGuard implements InvocationHandler {
+    private static final String JMX_ACL_PID_PREFIX = "jmx.acl";
     private ConfigurationAdmin configAdmin;
 
     public ConfigurationAdmin getConfigAdmin() {
@@ -138,7 +138,6 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             allPids.add(config.getPid());
         }
         for (String pid : iterateDownPids(segs)) {
-            pid = "jmx.acl." + pid;
             if (allPids.contains(pid)) {
                 Configuration config = configAdmin.getConfiguration(pid);
                 Dictionary<String, Object> properties = trimKeys(config.getProperties());
@@ -287,7 +286,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     private List<String> getMethodNameWildcardRoles(Dictionary<String, Object> properties, String methodName) {
-        SortedMap<String, Object> wildcardRules = new TreeMap<String, Object>(new Comparator<String>() {
+        SortedMap<String, String> wildcardRules = new TreeMap<String, String>(new Comparator<String>() {
             public int compare(String s1, String s2) {
                 // Returns longer entries before shorter ones...
                 return s2.length() - s1.length();
@@ -296,16 +295,18 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         for (Enumeration<String> e = properties.keys(); e.hasMoreElements(); ) {
             String key = e.nextElement();
             if (key.endsWith("*")) {
-                wildcardRules.put(key.substring(0, key.length() - 1), properties.get(key));
+                String prefix = key.substring(0, key.length() - 1);
+                if (methodName.startsWith(prefix)) {
+                    wildcardRules.put(prefix, properties.get(key).toString());
+                }
             }
         }
 
-        for (Map.Entry<String, Object> e : wildcardRules.entrySet()) {
-            if (methodName.startsWith(e.getKey())) {
-                return parseRoles(e.getValue().toString());
-            }
+        if (wildcardRules.size() == 0) {
+            return Collections.emptyList();
+        } else {
+            return parseRoles(wildcardRules.values().iterator().next());
         }
-        return Collections.emptyList();
     }
 
     private boolean allParamsMatch(List<String> regexpArgs, Object[] params) {
@@ -369,18 +370,31 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         return segs;
     }
 
+    /**
+     * Given a list of segments return a list of pids that are searched in this order.
+     * For example given the following segements: org.foo, bar, test
+     * the following list of pids will be generated (in this order):
+     *   jmx.acl.org.foo.bar.test
+     *   jmx.acl.org.foo.bar
+     *   jmx.acl.org.foo
+     *   jmx.acl
+     * The order is used as a search order, in which the most specific pid is searched first.
+     * @param segs the segments
+     * @return the pids in the above order.
+     */
     private List<String> iterateDownPids(List<String> segs) {
-        List<String> pids = new ArrayList<String>();
+        List<String> res = new ArrayList<String>();
         for (int i = segs.size(); i > 0; i--) {
             StringBuilder sb = new StringBuilder();
+            sb.append(JMX_ACL_PID_PREFIX);
             for (int j = 0; j < i; j++) {
-                if (sb.length() > 0)
-                    sb.append('.');
+                sb.append('.');
                 sb.append(segs.get(j));
             }
-            pids.add(sb.toString());
+            res.add(sb.toString());
         }
-        return pids;
+        res.add(JMX_ACL_PID_PREFIX); // This is the topmost PID
+        return res;
     }
 
     static boolean currentUserHasRole(String reqRole) {
