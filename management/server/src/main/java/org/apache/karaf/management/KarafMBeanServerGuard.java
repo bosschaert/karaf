@@ -73,9 +73,9 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
 
         ObjectName objectName = (ObjectName) args[0];
         if ("getAttribute".equals(method.getName())) {
-            handleGetAttribute(objectName, (String) args[1]);
+            handleGetAttribute((MBeanServer) proxy, objectName, (String) args[1]);
         } else if ("getAttributes".equals(method.getName())) {
-            handleGetAttributes(objectName, (String[]) args[1]);
+            handleGetAttributes((MBeanServer) proxy, objectName, (String[]) args[1]);
         } else if ("setAttribute".equals(method.getName())) {
             handleSetAttribute((MBeanServer) proxy, objectName, (Attribute) args[1]);
         } else if ("setAttributes".equals(method.getName())) {
@@ -144,13 +144,23 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         return false;
     }
 
-    private void handleGetAttribute(ObjectName objectName, String attributeName) throws IOException {
-        handleInvoke(objectName, "get" + attributeName, new Object [] {}, new String [] {});
+    private void handleGetAttribute(MBeanServer proxy, ObjectName objectName, String attributeName) throws JMException, IOException {
+        MBeanInfo info = proxy.getMBeanInfo(objectName);
+        String prefix = null;
+        for (MBeanAttributeInfo attr : info.getAttributes()) {
+            if (attr.getName().equals(attributeName)) {
+                prefix = attr.isIs() ? "is" : "get";
+            }
+        }
+        if (prefix == null)
+            throw new IllegalStateException("Attribute could not be found: " + attributeName);
+
+        handleInvoke(objectName, prefix + attributeName, new Object [] {}, new String [] {});
     }
 
-    private void handleGetAttributes(ObjectName objectName, String[] attributeNames) throws IOException {
+    private void handleGetAttributes(MBeanServer proxy, ObjectName objectName, String[] attributeNames) throws JMException, IOException {
         for (String attr : attributeNames) {
-            handleGetAttribute(objectName, attr);
+            handleGetAttribute(proxy, objectName, attr);
         }
     }
 

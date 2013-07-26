@@ -428,9 +428,24 @@ public class KarafMBeanServerGuardTest extends TestCase {
         });
     }
 
-    public void testGetAttribute() throws Throwable {
+    public void testGetAttributeIs() throws Throwable {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("Toast", "boolean", "", true, false, true);
+        MBeanAttributeInfo attr2 = new MBeanAttributeInfo("TestAttr", "java.lang.String", "", true, false, false);
+        MBeanAttributeInfo attr3 = new MBeanAttributeInfo("Butter", "int", "", true, true, false);
+
+        MBeanInfo mbeanInfo = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(mbeanInfo.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr, attr2, attr3}).anyTimes();
+        EasyMock.replay(mbeanInfo);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(mbeanInfo).anyTimes();
+        EasyMock.replay(mbs);
+
         Dictionary<String, Object> configuration = new Hashtable<String, Object>();
-        configuration.put("getToast", "editor");
+        configuration.put("getToast", "admin");
+        configuration.put("isToast", "editor");
         configuration.put("getTest*", "admin");
         ConfigurationAdmin ca = getMockConfigAdmin(configuration);
 
@@ -443,14 +458,12 @@ public class KarafMBeanServerGuardTest extends TestCase {
                 try {
                     Method im = MBeanServer.class.getMethod("getAttribute", ObjectName.class, String.class);
 
-                    ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
-
                     // The following operations should not throw an exception
-                    guard.invoke(null, im, new Object [] {on, "Toast"});
-                    guard.invoke(null, im, new Object [] {on, "TestAttr"});
+                    guard.invoke(mbs, im, new Object [] {on, "Toast"});
+                    guard.invoke(mbs, im, new Object [] {on, "TestAttr"});
 
                     try {
-                        guard.invoke(null, im, new Object [] {on, "Butter"});
+                        guard.invoke(mbs, im, new Object [] {on, "Butter"});
                         fail("Should not have allowed the invocation");
                     } catch (SecurityException se) {
                         // good
@@ -465,6 +478,20 @@ public class KarafMBeanServerGuardTest extends TestCase {
     }
 
     public void testGetAttributes() throws Throwable {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("Toast", "boolean", "", true, false, false);
+        MBeanAttributeInfo attr2 = new MBeanAttributeInfo("TestSomething", "java.lang.String", "", true, true, false);
+        MBeanAttributeInfo attr3 = new MBeanAttributeInfo("Butter", "int", "", true, true, false);
+
+        MBeanInfo mbeanInfo = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(mbeanInfo.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr, attr2, attr3}).anyTimes();
+        EasyMock.replay(mbeanInfo);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(mbeanInfo).anyTimes();
+        EasyMock.replay(mbs);
+
         Dictionary<String, Object> configuration = new Hashtable<String, Object>();
         configuration.put("getToast", "editor");
         configuration.put("getTest*", "admin");
@@ -479,14 +506,62 @@ public class KarafMBeanServerGuardTest extends TestCase {
                 try {
                     Method im = MBeanServer.class.getMethod("getAttributes", ObjectName.class, String[].class);
 
-                    ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
-
                     // The following operations should not throw an exception
-                    guard.invoke(null, im, new Object [] {on, new String [] {"Toast"}});
-                    guard.invoke(null, im, new Object [] {on, new String [] {"TestSomething", "Toast"}});
+                    guard.invoke(mbs, im, new Object [] {on, new String [] {"Toast"}});
+                    guard.invoke(mbs, im, new Object [] {on, new String [] {"TestSomething", "Toast"}});
 
                     try {
-                        guard.invoke(null, im, new Object [] {on, new String [] {"Butter", "Toast"}});
+                        guard.invoke(mbs, im, new Object [] {on, new String [] {"Butter", "Toast"}});
+                        fail("Should not have allowed the invocation");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+
+                    return null;
+                } catch (Throwable ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        });
+    }
+
+    public void testGetAttributes2() throws Throwable {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("Toast", "boolean", "", true, false, true);
+        MBeanAttributeInfo attr2 = new MBeanAttributeInfo("TestSomething", "boolean", "", true, false, true);
+        MBeanAttributeInfo attr3 = new MBeanAttributeInfo("Butter", "boolean", "", true, true, true);
+
+        MBeanInfo mbeanInfo = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(mbeanInfo.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr, attr2, attr3}).anyTimes();
+        EasyMock.replay(mbeanInfo);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(mbeanInfo).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("isT*", "editor");
+        configuration.put("getToast", "admin");
+        configuration.put("getButter", "editor");
+        configuration.put("getTest*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("editor", "admin");
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    Method im = MBeanServer.class.getMethod("getAttributes", ObjectName.class, String[].class);
+
+                    // The following operations should not throw an exception
+                    guard.invoke(mbs, im, new Object [] {on, new String [] {"Toast"}});
+                    guard.invoke(mbs, im, new Object [] {on, new String [] {"TestSomething", "Toast"}});
+
+                    try {
+                        guard.invoke(mbs, im, new Object [] {on, new String [] {"Butter", "Toast"}});
                         fail("Should not have allowed the invocation");
                     } catch (SecurityException se) {
                         // good
