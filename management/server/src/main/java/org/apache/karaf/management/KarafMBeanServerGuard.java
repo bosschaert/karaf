@@ -23,7 +23,6 @@ import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.Dictionary;
 import java.util.Enumeration;
@@ -148,35 +147,37 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                 3. get signature matches
                 4. without signature
                 5. method name wildcard
+
+                We return immediately when a definition is found, so if a specific definition is found
+                we do not search for a more generic specification.
+                Regular expressions and exact matches are considered equally specific, so they are combined...
                  */
 
+                boolean foundExactOrRegExp = false;
                 Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
                 if (exactArgMatchRoles instanceof String) {
                     roles.addAll(parseRoles((String) exactArgMatchRoles));
+                    foundExactOrRegExp = true;
                 }
 
-                roles.addAll(getRegExpRoles(properties, methodName, signature, params));
-                if (roles.size() > 0)
+                foundExactOrRegExp |= getRegExpRoles(properties, methodName, signature, params, roles);
+                if (foundExactOrRegExp)
                     return roles;
 
                 Object signatureRoles = properties.get(getSignature(methodName, signature));
                 if (signatureRoles instanceof String) {
                     roles.addAll(parseRoles((String) signatureRoles));
-                    if (roles.size() > 0)
-                        return roles;
+                    return roles;
                 }
 
                 Object methodRoles = properties.get(methodName);
                 if (methodRoles instanceof String) {
                     roles.addAll(parseRoles((String) methodRoles));
+                    return roles;
                 }
-                if (roles.size() > 0)
-                    return roles;
 
-                roles.addAll(getMethodNameWildcardRoles(properties, methodName));
-                if (roles.size() > 0)
+                if (getMethodNameWildcardRoles(properties, methodName, roles))
                     return roles;
-
             }
         }
         return roles;
@@ -226,9 +227,17 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     private List<String> parseRoles(String roleStr) {
+        int hashIdx = roleStr.indexOf('#');
+        if (hashIdx >= 0) {
+            // You can put a comment at the end
+            roleStr = roleStr.substring(0, hashIdx);
+        }
+
         List<String> roles = new ArrayList<String>();
         for (String role : roleStr.split("[,]")) {
-            roles.add(role.trim());
+            String trimmed = role.trim();
+            if (trimmed.length() > 0)
+                roles.add(trimmed);
         }
         return roles;
     }
@@ -243,7 +252,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             else
                 sb.append(',');
             sb.append('"');
-            sb.append(param.toString());
+            sb.append(param.toString()); // add .trim()
             sb.append('"');
         }
         sb.append(']');
@@ -266,8 +275,8 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         return sb.toString();
     }
 
-    private List<String> getRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, Object[] params) {
-        List<String> roles = new ArrayList<String>();
+    private boolean getRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, Object[] params, List<String> roles) {
+        boolean matchFound = false;
         String methodSig = getSignature(methodName, signature);
         String prefix = methodSig + "[/";
         for (Enumeration<String> e = properties.keys(); e.hasMoreElements(); ) {
@@ -275,6 +284,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             if (key.startsWith(prefix) && key.endsWith("/]")) {
                 List<String> regexpArgs = getRegExpDecl(key.substring(methodSig.length()));
                 if (allParamsMatch(regexpArgs, params)) {
+                    matchFound = true;
                     Object roleStr = properties.get(key);
                     if (roleStr instanceof String) {
                         roles.addAll(parseRoles((String) roleStr));
@@ -282,10 +292,10 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                 }
             }
         }
-        return roles;
+        return matchFound;
     }
 
-    private List<String> getMethodNameWildcardRoles(Dictionary<String, Object> properties, String methodName) {
+    private boolean getMethodNameWildcardRoles(Dictionary<String, Object> properties, String methodName, List<String> roles) {
         SortedMap<String, String> wildcardRules = new TreeMap<String, String>(new Comparator<String>() {
             public int compare(String s1, String s2) {
                 // Returns longer entries before shorter ones...
@@ -302,10 +312,11 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             }
         }
 
-        if (wildcardRules.size() == 0) {
-            return Collections.emptyList();
+        if (wildcardRules.size() != 0) {
+            roles.addAll(parseRoles(wildcardRules.values().iterator().next()));
+            return true;
         } else {
-            return parseRoles(wildcardRules.values().iterator().next());
+            return false;
         }
     }
 
