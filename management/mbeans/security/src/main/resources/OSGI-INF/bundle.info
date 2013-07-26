@@ -1,0 +1,11 @@
+PSIS\u001B[0m
+    ${project.name}
+
+    ${project.description}
+
+    Maven URL:
+        \u001B[33mmvn:${project.groupId}/${project.artifactId}/${project.version}\u001B[0m
+
+\u001B[1mDESCRIPTION\u001B[0m
+    The security mbean management bundle exposes MBean operations that can be used to check whether 
+    the current user has the correct roles to access a given MBean.

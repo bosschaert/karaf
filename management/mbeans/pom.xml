@@ -43,6 +43,7 @@
         <module>log</module>
         <module>obr</module>
         <module>scr</module>
+        <module>security</module>
         <module>web</module>
     </modules>
 

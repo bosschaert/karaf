@@ -438,6 +438,7 @@
         <bundle start-level="30">mvn:org.apache.karaf.management.mbeans/org.apache.karaf.management.mbeans.log/${project.version}</bundle>
         <bundle start-level="30">mvn:org.apache.karaf.management.mbeans/org.apache.karaf.management.mbeans.packages/${project.version}</bundle>
         <bundle start-level="30">mvn:org.apache.karaf.management.mbeans/org.apache.karaf.management.mbeans.dev/${project.version}</bundle>
+        <bundle start-level="30">mvn:org.apache.karaf.management.mbeans/org.apache.karaf.management.mbeans.security/${project.version}</bundle>
     </feature>
 
     <feature name="eventadmin" description="OSGi Event Admin service specification for event-based communication" version="${project.version}">

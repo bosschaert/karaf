@@ -18,6 +18,7 @@ package org.apache.karaf.management;
 
 import java.io.IOException;
 import java.security.Principal;
+import java.util.Arrays;
 
 import javax.management.remote.JMXAuthenticator;
 import javax.security.auth.Subject;
@@ -31,9 +32,7 @@ import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 
 public class JaasAuthenticator implements JMXAuthenticator {
-
     private String realm;
-    private String role;
 
     public String getRealm() {
         return realm;
@@ -43,20 +42,13 @@ public class JaasAuthenticator implements JMXAuthenticator {
         this.realm = realm;
     }
 
-    public String getRole() {
-        return role;
-    }
-
-    public void setRole(String role) {
-        this.role = role;
-    }
-
     public Subject authenticate(Object credentials) throws SecurityException {
         if (!(credentials instanceof String[])) {
             throw new IllegalArgumentException("Expected String[2], got "
                             + (credentials != null ? credentials.getClass().getName() : null));
         }
         final String[] params = (String[]) credentials;
+        /* */ System.out.println("Authenticate: " + Arrays.toString(params));
         if (params.length != 2) {
             throw new IllegalArgumentException("Expected String[2] but length was " + params.length);
         }
@@ -76,26 +68,19 @@ public class JaasAuthenticator implements JMXAuthenticator {
                 }
             });
             loginContext.login();
-            if (role != null && role.length() > 0) {
-            	String clazz = "org.apache.karaf.jaas.boot.principal.RolePrincipal";
-                String name = role;
-                int idx = role.indexOf(':');
-                if (idx > 0) {
-                    clazz = role.substring(0, idx);
-                    name = role.substring(idx + 1);
-                }
-                boolean found = false;
-                for (Principal p : subject.getPrincipals()) {
-                    if (p.getClass().getName().equals(clazz)
-                            && p.getName().equals(name)) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    throw new FailedLoginException("User does not have the required role " + role);
+            /* */ System.out.println("Login succeeded, subj: " + subject + " realm: " + realm);
+        	String clazz = "org.apache.karaf.jaas.boot.principal.RolePrincipal";
+            boolean found = false;
+            for (Principal p : subject.getPrincipals()) {
+                if (p.getClass().getName().equals(clazz)) {
+                    found = true;
+                    break;
                 }
             }
+            if (!found) {
+                throw new FailedLoginException("User does not have the required role.");
+            }
+
             return subject;
         } catch (LoginException e) {
             throw new SecurityException("Authentication failed", e);
