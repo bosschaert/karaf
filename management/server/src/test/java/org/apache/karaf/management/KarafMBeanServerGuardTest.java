@@ -123,8 +123,8 @@ public class KarafMBeanServerGuardTest extends TestCase {
         configuration.put("testIt( java.lang.String)", "viewer");
         configuration.put("testIt( java.lang.String ,java.lang.String)", "editor");
         configuration.put("testIt( java.lang.String ) [\"ab\"]", "manager");
-        configuration.put("testIt( java.lang.String )[\" a b \" ]", "admin");
-        configuration.put("testIt( java.lang.String )[ \" cd \"]  ", "tester");
+        configuration.put("testIt( java.lang.String )[\"a b\" ]", "admin");
+        configuration.put("testIt( java.lang.String )[ \"cd\"]  ", "tester");
         configuration.put("testIt(java.lang.String)[\"cd/\"]", "monkey");
         configuration.put("testIt(java.lang.String)[\"cd\"\"]", "donkey");
         ConfigurationAdmin ca = getMockConfigAdmin(configuration);
@@ -137,8 +137,10 @@ public class KarafMBeanServerGuardTest extends TestCase {
                 guard.getRequiredRoles(on, "testIt", new Object[] {"ab"}, new String [] {"java.lang.String"}));
         assertEquals(Collections.singletonList("admin"),
                 guard.getRequiredRoles(on, "testIt", new Object[] {" a b "}, new String [] {"java.lang.String"}));
-        assertEquals("Doesn't match the exact, space mismatch",
-                Collections.singletonList("viewer"),
+        assertEquals("The arguments are trimmed before checking",
+                Collections.singletonList("admin"),
+                guard.getRequiredRoles(on, "testIt", new Object[] {"a b"}, new String [] {"java.lang.String"}));
+        assertEquals(Collections.singletonList("tester"),
                 guard.getRequiredRoles(on, "testIt", new Object[] {"cd"}, new String [] {"java.lang.String"}));
         assertEquals(Collections.singletonList("monkey"),
                 guard.getRequiredRoles(on, "testIt", new Object[] {"cd/"}, new String [] {"java.lang.String"}));
@@ -162,6 +164,22 @@ public class KarafMBeanServerGuardTest extends TestCase {
                 guard.getRequiredRoles(on, "foo", new Object[] {",", "a"}, new String [] {"java.lang.String", "java.lang.String"}));
         assertEquals(Collections.emptyList(),
                 guard.getRequiredRoles(on, "foo", new Object[] {"a", "a"}, new String [] {"java.lang.String", "java.lang.String"}));
+    }
+
+    public void testRequiredRolesNumeric() throws Exception {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("bar(int)[\"17\"]", "editor #this is the editor rule");
+        configuration.put("bar", "viewer");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+        assertEquals(Collections.singletonList("editor"),
+                guard.getRequiredRoles(on, "bar", new Object[] {new Integer(17)}, new String [] {"int"}));
+        assertEquals(Collections.singletonList("viewer"),
+                guard.getRequiredRoles(on, "bar", new Object[] {new Integer(18)}, new String [] {"int"}));
     }
 
     public void testRequiredRolesExactNobody() throws Exception {

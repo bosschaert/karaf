@@ -252,7 +252,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
             else
                 sb.append(',');
             sb.append('"');
-            sb.append(param.toString()); // add .trim()
+            sb.append(param.toString().trim());
             sb.append('"');
         }
         sb.append(']');
