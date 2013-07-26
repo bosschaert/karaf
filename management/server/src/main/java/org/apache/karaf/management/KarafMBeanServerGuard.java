@@ -105,7 +105,17 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                 return true;
             }
         }
-        // TODO attributes / get/set
+
+        for (MBeanAttributeInfo attr : info.getAttributes()) {
+            if (attr.isReadable()) {
+                if (canInvoke(objectName, attr.isIs() ? "is" : "get" + attr.getName(), new String [] {}))
+                    return true;
+            }
+            if (attr.isWritable()) {
+                if (canInvoke(objectName, "set" + attr.getName(), new String [] {attr.getType()}))
+                    return true;
+            }
+        }
         return false;
     }
 

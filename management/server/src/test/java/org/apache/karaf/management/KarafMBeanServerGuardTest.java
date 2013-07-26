@@ -625,9 +625,11 @@ public class KarafMBeanServerGuardTest extends TestCase {
 
         MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
         EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {op}).anyTimes();
+        EasyMock.expect(info.getAttributes()).andReturn(new MBeanAttributeInfo[] {}).anyTimes();
         EasyMock.replay(info);
         MBeanInfo info2 = EasyMock.createMock(MBeanInfo.class);
         EasyMock.expect(info2.getOperations()).andReturn(new MBeanOperationInfo[] {}).anyTimes();
+        EasyMock.expect(info2.getAttributes()).andReturn(new MBeanAttributeInfo[] {}).anyTimes();
         EasyMock.replay(info2);
 
         final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
@@ -671,6 +673,7 @@ public class KarafMBeanServerGuardTest extends TestCase {
 
         MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
         EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {op}).anyTimes();
+        EasyMock.expect(info.getAttributes()).andReturn(new MBeanAttributeInfo[] {}).anyTimes();
         EasyMock.replay(info);
 
         final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
@@ -684,6 +687,196 @@ public class KarafMBeanServerGuardTest extends TestCase {
         configuration.put("doit(int)[\"12\"]", "admin");
         configuration.put("doit", "admin");
         configuration.put("do*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertFalse(guard.canInvoke(mbs, on));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMBeanGetter() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("a1", "boolean", "", true, false, true);
+
+        MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {}).anyTimes();
+        EasyMock.expect(info.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr}).anyTimes();
+        EasyMock.replay(info);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(info).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("get*", "admin");
+        configuration.put("is*", "viewer");
+        configuration.put("*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertTrue(guard.canInvoke(mbs, on));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMBeanGetter2() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("a1", "boolean", "", true, false, false);
+
+        MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {}).anyTimes();
+        EasyMock.expect(info.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr}).anyTimes();
+        EasyMock.replay(info);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(info).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("get*", "admin");
+        configuration.put("is*", "viewer");
+        configuration.put("*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertFalse(guard.canInvoke(mbs, on));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMBeanGetter3() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("A1", "boolean", "", true, false, false);
+
+        MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {}).anyTimes();
+        EasyMock.expect(info.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr}).anyTimes();
+        EasyMock.replay(info);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(info).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("getA1", "viewer");
+        configuration.put("is*", "admin");
+        configuration.put("*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertTrue(guard.canInvoke(mbs, on));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMBeanSetter() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("A2", "java.lang.String", "", true, true, false);
+
+        MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {}).anyTimes();
+        EasyMock.expect(info.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr}).anyTimes();
+        EasyMock.replay(info);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(info).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("get*", "admin");
+        configuration.put("setA2", "viewer");
+        configuration.put("*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertTrue(guard.canInvoke(mbs, on));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMBeanSetter2() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanAttributeInfo attr = new MBeanAttributeInfo("A2", "java.lang.String", "", true, true, false);
+
+        MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {}).anyTimes();
+        EasyMock.expect(info.getAttributes()).andReturn(new MBeanAttributeInfo[] {attr}).anyTimes();
+        EasyMock.replay(info);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(info).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("get*", "admin");
+        configuration.put("setA2", "admin");
+        configuration.put("*", "admin");
         ConfigurationAdmin ca = getMockConfigAdmin(configuration);
 
         final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
