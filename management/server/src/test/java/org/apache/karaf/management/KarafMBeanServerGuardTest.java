@@ -33,6 +33,8 @@ import javax.management.Attribute;
 import javax.management.AttributeList;
 import javax.management.MBeanAttributeInfo;
 import javax.management.MBeanInfo;
+import javax.management.MBeanOperationInfo;
+import javax.management.MBeanParameterInfo;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import javax.security.auth.Subject;
@@ -609,6 +611,164 @@ public class KarafMBeanServerGuardTest extends TestCase {
                     return null;
                 } catch (Throwable ex) {
                     throw new RuntimeException(ex);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMBean() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+        final ObjectName on2 = ObjectName.getInstance("foo.bar:type=Toast");
+
+        MBeanParameterInfo[] sig = new MBeanParameterInfo[] {new MBeanParameterInfo("arg1", "java.lang.String", "")};
+        MBeanOperationInfo op = new MBeanOperationInfo("doit", "", sig, "int", MBeanOperationInfo.INFO);
+
+        MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {op}).anyTimes();
+        EasyMock.replay(info);
+        MBeanInfo info2 = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info2.getOperations()).andReturn(new MBeanOperationInfo[] {}).anyTimes();
+        EasyMock.replay(info2);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(info).anyTimes();
+        EasyMock.expect(mbs.getMBeanInfo(on2)).andReturn(info2).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("doit(java.lang.String)[/11/]", "admin");
+        configuration.put("doit(java.lang.String)", "viewer");
+        configuration.put("doit(java.lang.String,java.lang.String)", "viewer");
+        configuration.put("doit(int)[\"12\"]", "admin");
+        configuration.put("doit", "admin");
+        configuration.put("do*", "viewer");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertTrue(guard.canInvoke(mbs, on));
+                    assertFalse(guard.canInvoke(mbs, on2));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMBean2() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        MBeanParameterInfo[] sig = new MBeanParameterInfo[] {new MBeanParameterInfo("arg1", "java.lang.String", "")};
+        MBeanOperationInfo op = new MBeanOperationInfo("doit", "", sig, "int", MBeanOperationInfo.INFO);
+
+        MBeanInfo info = EasyMock.createMock(MBeanInfo.class);
+        EasyMock.expect(info.getOperations()).andReturn(new MBeanOperationInfo[] {op}).anyTimes();
+        EasyMock.replay(info);
+
+        final MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+        EasyMock.expect(mbs.getMBeanInfo(on)).andReturn(info).anyTimes();
+        EasyMock.replay(mbs);
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("doit(java.lang.String)[/11/]", "admin");
+        configuration.put("doit(java.lang.String)", "admin");
+        configuration.put("doit(java.lang.String,java.lang.String)", "admin");
+        configuration.put("doit(int)[\"12\"]", "admin");
+        configuration.put("doit", "admin");
+        configuration.put("do*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertFalse(guard.canInvoke(mbs, on));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMethod() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("doit(java.lang.String)[/11/]", "admin");
+        configuration.put("doit(java.lang.String)", "viewer");
+        configuration.put("doit(java.lang.String,java.lang.String)", "viewer");
+        configuration.put("doit(int)[\"12\"]", "admin");
+        configuration.put("doit", "admin");
+        configuration.put("do*", "viewer");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertTrue(guard.canInvoke(null, on, "dodo", new String [] {"java.lang.String"}));
+                    assertTrue(guard.canInvoke(null, on, "doit", new String [] {"java.lang.String", "java.lang.String"}));
+                    assertTrue(guard.canInvoke(null, on, "doit", new String [] {"java.lang.String"}));
+                    assertFalse(guard.canInvoke(null, on, "doit", new String [] {"int"}));
+                    assertFalse(guard.canInvoke(null, on, "doit", new String [] {}));
+                    assertFalse(guard.canInvoke(null, on, "uuuh", new String [] {"java.lang.String"}));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
+                }
+            }
+        });
+    }
+
+    public void testCanInvokeMethod2() throws Exception {
+        final ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("doit(java.lang.String)[/11/]", "viewer");
+        configuration.put("doit(java.lang.String)", "admin");
+        configuration.put("doit(java.lang.String,java.lang.String)", "admin");
+        configuration.put("doit(int)[\"12\"]", "viewer");
+        configuration.put("doit", "viewer");
+        configuration.put("do*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        final KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        Subject subject = loginWithTestRoles("viewer");
+
+        Subject.doAs(subject, new PrivilegedAction<Void>() {
+            public Void run() {
+                try {
+                    assertTrue(guard.canInvoke(null, on, "doit", new String [] {"java.lang.String"}));
+                    assertTrue(guard.canInvoke(null, on, "doit", new String [] {}));
+                    assertTrue(guard.canInvoke(null, on, "doit", new String [] {"int"}));
+                    assertFalse(guard.canInvoke(null, on, "doit", new String [] {"java.lang.String", "java.lang.String"}));
+                    assertFalse(guard.canInvoke(null, on, "dodo", new String [] {"java.lang.String"}));
+                    assertFalse(guard.canInvoke(null, on, "uuuh", new String [] {"java.lang.String"}));
+
+                    return null;
+                } catch (Throwable th) {
+                    throw new RuntimeException(th);
                 }
             }
         });

@@ -36,6 +36,8 @@ import javax.management.AttributeList;
 import javax.management.JMException;
 import javax.management.MBeanAttributeInfo;
 import javax.management.MBeanInfo;
+import javax.management.MBeanOperationInfo;
+import javax.management.MBeanParameterInfo;
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import javax.security.auth.Subject;
@@ -85,17 +87,64 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         return null;
     }
 
-    private void handleGetAttribute(ObjectName objectName, String attributeName) throws IOException, InvalidSyntaxException {
+    /**
+     * Returns if there is any method that the current user can invoke
+     * @param mbeanServer The MBeanServer where the object is registered.
+     * @param objectName The ObjectName to check.
+     * @return {@code true} if there is a method on the object that can be invoked.
+     */
+    public boolean canInvoke(MBeanServer mbeanServer, ObjectName objectName) throws JMException, IOException {
+        MBeanInfo info = mbeanServer.getMBeanInfo(objectName);
+
+        for (MBeanOperationInfo operation : info.getOperations()) {
+            List<String> sig = new ArrayList<String>();
+            for (MBeanParameterInfo param : operation.getSignature()) {
+                sig.add(param.getType());
+            }
+            if (canInvoke(objectName, operation.getName(), sig.toArray(new String [] {}))) {
+                return true;
+            }
+        }
+        // TODO attributes / get/set
+        return false;
+    }
+
+    /**
+     * Returns true if the method on the MBean with the specified signature can be invoked.
+     *
+     * @param mbeanServer The MBeanServer where the object is registered.
+     * @param objectName The ObjectName to check.
+     * @param methodName The name of the method.
+     * @param signature The signature of the method.
+     * @return {@code true} if the method can be invoked. Note that if a method name or signature is provided
+     * that does not exist on the MBean the behaviour of this method is undefined. In other words, if you ask
+     * whether a method that does not exist can be invoked, the method may return {@code true} but actually
+     * invoking that method will obviously not work.
+     */
+    public boolean canInvoke(MBeanServer mbeanServer, ObjectName objectName, String methodName, String[] signature) throws IOException {
+        // No checking done on the mbeanServer of whether the method actually exists...
+        return canInvoke(objectName, methodName, signature);
+    }
+
+    private boolean canInvoke(ObjectName objectName, String methodName, String[] signature) throws IOException {
+        for (String role : getRequiredRoles(objectName, methodName, signature)) {
+            if (currentUserHasRole(role))
+                return true;
+        }
+        return false;
+    }
+
+    private void handleGetAttribute(ObjectName objectName, String attributeName) throws IOException {
         handleInvoke(objectName, "get" + attributeName, new Object [] {}, new String [] {});
     }
 
-    private void handleGetAttributes(ObjectName objectName, String[] attributeNames) throws IOException, InvalidSyntaxException {
+    private void handleGetAttributes(ObjectName objectName, String[] attributeNames) throws IOException {
         for (String attr : attributeNames) {
             handleGetAttribute(objectName, attr);
         }
     }
 
-    private void handleSetAttribute(MBeanServer proxy, ObjectName objectName, Attribute attribute) throws JMException, IOException, InvalidSyntaxException {
+    private void handleSetAttribute(MBeanServer proxy, ObjectName objectName, Attribute attribute) throws JMException, IOException {
         String dataType = null;
         MBeanInfo info = proxy.getMBeanInfo(objectName);
         for (MBeanAttributeInfo attr : info.getAttributes()) {
@@ -111,13 +160,13 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         handleInvoke(objectName, "set" + attribute.getName(), new Object [] {attribute.getValue()}, new String [] {dataType});
     }
 
-    private void handleSetAttributes(MBeanServer proxy, ObjectName objectName, AttributeList attributes) throws JMException, IOException, InvalidSyntaxException {
+    private void handleSetAttributes(MBeanServer proxy, ObjectName objectName, AttributeList attributes) throws JMException, IOException {
         for (Attribute attr : attributes.asList()) {
             handleSetAttribute(proxy, objectName, attr);
         }
     }
 
-    void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
+    void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException {
         for (String role : getRequiredRoles(objectName, operationName, params, signature)) {
             if (currentUserHasRole(role)) {
                 return;
@@ -126,17 +175,24 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
         throw new SecurityException("Insufficient credentials for operation.");
     }
 
-    List<String> getRequiredRoles(ObjectName objectName, String methodName, Object[] params, String[] signature) throws IOException, InvalidSyntaxException {
-        List<String> roles = new ArrayList<String>();
-        List<String> segs = getNameSegments(objectName);
+    List<String> getRequiredRoles(ObjectName objectName, String methodName, String[] signature) throws IOException {
+        return getRequiredRoles(objectName, methodName, null, signature);
+    }
 
+    List<String> getRequiredRoles(ObjectName objectName, String methodName, Object[] params, String[] signature) throws IOException {
+        List<String> roles = new ArrayList<String>();
         // TODO cache
         List<String> allPids = new ArrayList<String>();
         // TODO fine tune filter !?
-        for (Configuration config : configAdmin.listConfigurations(null)) {
-            allPids.add(config.getPid());
+        try {
+            for (Configuration config : configAdmin.listConfigurations(null)) {
+                allPids.add(config.getPid());
+            }
+        } catch (InvalidSyntaxException ise) {
+            throw new RuntimeException(ise);
         }
-        for (String pid : iterateDownPids(segs)) {
+
+        for (String pid : iterateDownPids(getNameSegments(objectName))) {
             if (allPids.contains(pid)) {
                 Configuration config = configAdmin.getConfiguration(pid);
                 Dictionary<String, Object> properties = trimKeys(config.getProperties());
@@ -154,19 +210,32 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                  */
 
                 boolean foundExactOrRegExp = false;
-                Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
-                if (exactArgMatchRoles instanceof String) {
-                    roles.addAll(parseRoles((String) exactArgMatchRoles));
-                    foundExactOrRegExp = true;
-                }
+                if (params != null) {
+                    Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
+                    if (exactArgMatchRoles instanceof String) {
+                        roles.addAll(parseRoles((String) exactArgMatchRoles));
+                        foundExactOrRegExp = true;
+                    }
 
-                foundExactOrRegExp |= getRegExpRoles(properties, methodName, signature, params, roles);
-                if (foundExactOrRegExp)
-                    return roles;
+                    foundExactOrRegExp |= getRegExpRoles(properties, methodName, signature, params, roles);
+
+                    if (foundExactOrRegExp) {
+                        // Since we have the actual parameters we can match them and if they do we won't look for any
+                        // more generic rules...
+                        return roles;
+                    }
+                } else {
+                    foundExactOrRegExp = getExactArgOrRegExpRoles(properties, methodName, signature, roles);
+                }
 
                 Object signatureRoles = properties.get(getSignature(methodName, signature));
                 if (signatureRoles instanceof String) {
                     roles.addAll(parseRoles((String) signatureRoles));
+                    return roles;
+                }
+
+                if (foundExactOrRegExp) {
+                    // We can get here if params == null and there were exact and/or regexp rules but no signature rules
                     return roles;
                 }
 
@@ -289,6 +358,23 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
                     if (roleStr instanceof String) {
                         roles.addAll(parseRoles((String) roleStr));
                     }
+                }
+            }
+        }
+        return matchFound;
+    }
+
+    private boolean getExactArgOrRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, List<String> roles) {
+        boolean matchFound = false;
+        String methodSig = getSignature(methodName, signature);
+        String prefix = methodSig + "[";
+        for (Enumeration<String> e = properties.keys(); e.hasMoreElements(); ) {
+            String key = e.nextElement().trim();
+            if (key.startsWith(prefix) && key.endsWith("]")) {
+                matchFound = true;
+                Object roleStr = properties.get(key);
+                if (roleStr instanceof String) {
+                    roles.addAll(parseRoles((String) roleStr));
                 }
             }
         }

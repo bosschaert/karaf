@@ -30,6 +30,10 @@ import javax.management.MBeanServerDelegate;
 public class KarafMBeanServerBuilder extends MBeanServerBuilder {
     private static volatile InvocationHandler guard;
 
+    public static InvocationHandler getGuard() {
+        return guard;
+    }
+
     public static void init(InvocationHandler guardHandler) {
         guard = guardHandler;
     }
