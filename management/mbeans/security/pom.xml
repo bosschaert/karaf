@@ -31,7 +31,8 @@
     <artifactId>org.apache.karaf.management.mbeans.security</artifactId>
     <packaging>bundle</packaging>
     <name>Apache Karaf :: Management :: MBeans :: Security</name>
-    <description>The Security MBean bundle provides a JMX MBean to that can check whether the current user has the right roles to see a certain MBean or invoke a given JMX operation.</description>
+    <description>The Security MBean bundle provides a JMX MBean to that can check whether the current user has the right 
+        credentials to see a certain MBean or invoke a given JMX operation.</description>
 
     <properties>
         <appendedResourcesDirectory>${basedir}/../../../etc/appended-resources/</appendedResourcesDirectory>
@@ -83,15 +84,9 @@
                             *
                         </Import-Package>
                         <Private-Package>
-                            org.apache.karaf.management.mbeans.bundles.internal,
+                            org.apache.karaf.management.mbeans.security.internal,
                             !*
                         </Private-Package>
-                        <!--
-                        <Private-Package>
-                            org.apache.karaf.management.mbeans.bundles.internal,
-                            !*
-                        </Private-Package>
-                        -->
                     </instructions>
                 </configuration>
             </plugin>

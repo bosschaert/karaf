@@ -29,7 +29,7 @@ import org.apache.karaf.management.mbeans.security.SecurityMBean;
 public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
     private MBeanServer mbeanServer;
 
-    protected SecurityMBeanImpl() throws NotCompliantMBeanException {
+    public SecurityMBeanImpl() throws NotCompliantMBeanException {
         super(SecurityMBean.class);
     }
 
@@ -59,13 +59,12 @@ public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
         }
     }
 
-    public MBeanServer getMBeanServer() {
+    public MBeanServer getMbeanServer() {
         return this.mbeanServer;
     }
 
-    public void setMBeanServer(MBeanServer mbeanServer) {
+    public void setMbeanServer(MBeanServer mbeanServer) {
+        System.out.println("*** Set the MBean Server: " + mbeanServer);
         this.mbeanServer = mbeanServer;
     }
-
-
 }
