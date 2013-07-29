@@ -21,7 +21,7 @@
 
     <!-- Security MBean -->
     <bean id="securityMBean" class="org.apache.karaf.management.mbeans.security.internal.SecurityMBeanImpl">
-        <property name="mbeanServer" ref="mbeanServer"/>
+        <property name="MBeanServer" ref="mbeanServer"/>
     </bean>
 
     <!-- MBean Registrer -->

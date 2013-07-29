@@ -59,12 +59,11 @@ public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
         }
     }
 
-    public MBeanServer getMbeanServer() {
+    public MBeanServer getMBeanServer() {
         return this.mbeanServer;
     }
 
-    public void setMbeanServer(MBeanServer mbeanServer) {
-        System.out.println("*** Set the MBean Server: " + mbeanServer);
+    public void setMBeanServer(MBeanServer mbeanServer) {
         this.mbeanServer = mbeanServer;
     }
 }

@@ -48,7 +48,7 @@ import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 
-public final class KarafMBeanServerGuard implements InvocationHandler {
+public class KarafMBeanServerGuard implements InvocationHandler {
     private static final String JMX_ACL_PID_PREFIX = "jmx.acl";
     private ConfigurationAdmin configAdmin;
 
@@ -61,7 +61,7 @@ public final class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     public void init() {
-        KarafMBeanServerBuilder.init(this);
+        KarafMBeanServerBuilder.setGuard(this);
     }
 
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {

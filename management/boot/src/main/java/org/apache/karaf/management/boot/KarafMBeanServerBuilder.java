@@ -34,7 +34,7 @@ public class KarafMBeanServerBuilder extends MBeanServerBuilder {
         return guard;
     }
 
-    public static void init(InvocationHandler guardHandler) {
+    public static void setGuard(InvocationHandler guardHandler) {
         guard = guardHandler;
     }
 

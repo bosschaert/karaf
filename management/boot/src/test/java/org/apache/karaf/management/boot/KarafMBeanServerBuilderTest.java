@@ -51,7 +51,7 @@ public class KarafMBeanServerBuilderTest extends TestCase {
             }
         };
 
-        KarafMBeanServerBuilder.init(guard);
+        KarafMBeanServerBuilder.setGuard(guard);
 
         assertEquals("Precondition", 0, handlerArgs.size());
         ObjectName on = ObjectName.getInstance("foo.bar:type=TestObject");
@@ -130,7 +130,7 @@ public class KarafMBeanServerBuilderTest extends TestCase {
             }
         };
 
-        KarafMBeanServerBuilder.init(guard);
+        KarafMBeanServerBuilder.setGuard(guard);
 
         assertEquals("Precondition", 0, handlerArgs.size());
         ObjectName on = ObjectName.getInstance("foo.bar:type=TestObject");
