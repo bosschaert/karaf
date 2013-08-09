@@ -16,7 +16,11 @@
  */
 package org.apache.karaf.management.mbeans.security;
 
+import java.util.List;
+import java.util.Map;
+
 import javax.management.MalformedObjectNameException;
+import javax.management.openmbean.TabularData;
 
 
 /**
@@ -29,8 +33,9 @@ public interface SecurityMBean {
      * @return {@code true} if there is at least one method on the MBean that the
      * user can invoke.
      * @throws MalformedObjectNameException
+     * @throws Exception
      */
-    boolean canInvoke(String objectName) throws MalformedObjectNameException;
+    boolean canInvoke(String objectName) throws Exception;
 
     /**
      * Checks whether the current user can invoke the given method.
@@ -40,5 +45,7 @@ public interface SecurityMBean {
      * @return {@code true} if the user is allowed to invoke the method. There may still
      * be certain values that the user does not have permission to pass to the method.
      */
-    boolean canInvoke(String objectName, String methodName, String [] argumentTypes) throws MalformedObjectNameException;
+    boolean canInvoke(String objectName, String methodName, String [] argumentTypes) throws Exception;
+
+    TabularData canInvoke(Map<String, List<String>> query) throws Exception;
 }
