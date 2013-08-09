@@ -18,9 +18,15 @@ package org.apache.karaf.management.internal;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
+import javax.management.openmbean.CompositeData;
+import javax.management.openmbean.TabularData;
 
 import junit.framework.TestCase;
 
@@ -161,6 +167,39 @@ public class SecurityMBeanImplTestCase extends TestCase {
         try {
             SecurityMBeanImpl mb = new SecurityMBeanImpl();
             assertTrue(mb.canInvoke("foo.bar.testing:type=SomeMBean", "someMethod", new String [] {}));
+        } finally {
+            KarafMBeanServerBuilder.setGuard(prevGuard);
+        }
+    }
+
+    public void testCanInvokeBulk() throws Exception {
+        InvocationHandler prevGuard = KarafMBeanServerBuilder.getGuard();
+        try {
+            MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
+            EasyMock.replay(mbs);
+
+            String objectName = "foo.bar.testing:type=SomeMBean";
+            KarafMBeanServerGuard testGuard = EasyMock.createMock(KarafMBeanServerGuard.class);
+            final String[] la = new String [] {"long"};
+            final String[] sa = new String [] {"java.lang.String"};
+            final String[] sa2 = new String [] {"java.lang.String", "java.lang.String"};
+            EasyMock.expect(testGuard.canInvoke(EasyMock.eq(mbs), EasyMock.eq(new ObjectName(objectName)), EasyMock.eq("testMethod"), EasyMock.aryEq(la))).andReturn(true);
+            EasyMock.expect(testGuard.canInvoke(mbs, new ObjectName(objectName), "testMethod", sa)).andReturn(true);
+            EasyMock.expect(testGuard.canInvoke(mbs, new ObjectName(objectName), "otherMethod", sa2)).andReturn(false);
+            EasyMock.replay(testGuard);
+            KarafMBeanServerBuilder.setGuard(testGuard);
+
+            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            mb.setMBeanServer(mbs);
+            Map<String, List<String>> query = new HashMap<String, List<String>>();
+            query.put(objectName, Arrays.asList("testMethod(long)"));
+            TabularData result = mb.canInvoke(query);
+            assertEquals(1, result.size());
+
+            CompositeData cd = result.get(new Object [] {objectName, "testMethod(long)"});
+            assertEquals(objectName, cd.get("ObjectName"));
+            assertEquals("testMethod(long)", cd.get("Method"));
+            assertEquals(true, cd.get("CanInvoke"));
         } finally {
             KarafMBeanServerBuilder.setGuard(prevGuard);
         }

@@ -137,10 +137,15 @@ public class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     private boolean canInvoke(ObjectName objectName, String methodName, String[] signature) throws IOException {
+        System.out.println("*** Can invoke: " + objectName + "+" + methodName);
         for (String role : getRequiredRoles(objectName, methodName, signature)) {
-            if (currentUserHasRole(role))
+            if (currentUserHasRole(role)) {
+                System.out.println("*** yes");
                 return true;
+            }
         }
+
+        System.out.println("*** no");
         return false;
     }
 
@@ -187,11 +192,14 @@ public class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     void handleInvoke(ObjectName objectName, String operationName, Object[] params, String[] signature) throws IOException {
+        System.out.println("*** handleInvoke: " + objectName + "+" + operationName);
         for (String role : getRequiredRoles(objectName, operationName, params, signature)) {
             if (currentUserHasRole(role)) {
+                System.out.println("*** ok");
                 return;
             }
         }
+        System.out.println("*** nope");
         throw new SecurityException("Insufficient credentials for operation.");
     }
 
@@ -530,6 +538,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         if (acc == null)
             return false;
         Subject subject = Subject.getSubject(acc);
+        System.out.println("*** Current Subject: " + subject);
         if (subject == null)
             return false;
 
