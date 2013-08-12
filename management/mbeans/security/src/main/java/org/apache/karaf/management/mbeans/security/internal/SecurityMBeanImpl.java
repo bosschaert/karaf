@@ -69,10 +69,7 @@ public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
     public TabularData canInvoke(Map<String, List<String>> bulkQuery) throws Exception {
         TabularData table = new TabularDataSupport(CAN_INVOKE_TABULAR_TYPE);
 
-        System.out.println("*** canInvoke: " + bulkQuery);
         for (Map.Entry<String, List<String>> entry : bulkQuery.entrySet()) {
-            System.out.println("  " + entry.getKey() + "#" + entry.getValue() + "#" + entry.getValue().size());
-
             String objectName = entry.getKey();
             List<String> methods = entry.getValue();
             if (methods.size() == 0) {
