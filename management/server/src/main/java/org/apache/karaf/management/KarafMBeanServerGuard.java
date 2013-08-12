@@ -88,7 +88,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     /**
-     * Returns if there is any method that the current user can invoke
+     * Returns whether there is any method that the current user can invoke
      * @param mbeanServer The MBeanServer where the object is registered.
      * @param objectName The ObjectName to check.
      * @return {@code true} if there is a method on the object that can be invoked.
@@ -120,10 +120,48 @@ public class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     /**
+     * Returns whether there is any overload of the specified method that can be invoked by the current user.
+     * @param mbeanServer The MBeanServer where the object is registered.
+     * @param objectName The MBean Object Name.
+     * @param methodName The name of the method.
+     * @return {@code true} if there is an overload of the method that can be invoked by the current user.
+     */
+    public boolean canInvoke(MBeanServer mbeanServer, ObjectName objectName, String methodName) throws JMException, IOException {
+        methodName = methodName.trim();
+        MBeanInfo info = mbeanServer.getMBeanInfo(objectName);
+
+        for (MBeanOperationInfo op : info.getOperations()) {
+            if (!methodName.equals(op.getName())) {
+                continue;
+            }
+
+            List<String> sig = new ArrayList<String>();
+            for (MBeanParameterInfo param : op.getSignature()) {
+                sig.add(param.getType());
+            }
+            if (canInvoke(objectName, op.getName(), sig.toArray(new String [] {}))) {
+                return true;
+            }
+        }
+
+        for (MBeanAttributeInfo attr : info.getAttributes()) {
+            String attrName = attr.getName();
+            if (methodName.equals("is" + attrName) || methodName.equals("get" + attrName)) {
+                return canInvoke(objectName, methodName, new String [] {});
+            }
+
+            if (methodName.equals("set" + attrName)) {
+                return canInvoke(objectName, methodName, new String [] {attr.getType()});
+            }
+        }
+        return false;
+    }
+
+    /**
      * Returns true if the method on the MBean with the specified signature can be invoked.
      *
      * @param mbeanServer The MBeanServer where the object is registered.
-     * @param objectName The ObjectName to check.
+     * @param objectName The MBean Object Name.
      * @param methodName The name of the method.
      * @param signature The signature of the method.
      * @return {@code true} if the method can be invoked. Note that if a method name or signature is provided

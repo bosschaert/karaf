@@ -19,6 +19,7 @@ package org.apache.karaf.management.internal;
 import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +85,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
         }
     }
 
-    public void testCanInvokeMBean3() throws Exception {
+    public void testCanInvokeMBeanThrowsException() throws Exception {
         InvocationHandler prevGuard = KarafMBeanServerBuilder.getGuard();
         try {
             MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
@@ -98,7 +99,10 @@ public class SecurityMBeanImplTestCase extends TestCase {
 
             SecurityMBeanImpl mb = new SecurityMBeanImpl();
             mb.setMBeanServer(mbs);
-            assertFalse(mb.canInvoke(objectName));
+            mb.canInvoke(objectName);
+            fail("Should have thrown an exception");
+        } catch (IOException ioe) {
+            // good!
         } finally {
             KarafMBeanServerBuilder.setGuard(prevGuard);
         }
@@ -156,7 +160,10 @@ public class SecurityMBeanImplTestCase extends TestCase {
 
             SecurityMBeanImpl mb = new SecurityMBeanImpl();
             mb.setMBeanServer(mbs);
-            assertFalse(mb.canInvoke(objectName, "testMethod", ea));
+            mb.canInvoke(objectName, "testMethod", ea);
+            fail("Should have thrown an exception");
+        } catch (IOException ioe) {
+            // good
         } finally {
             KarafMBeanServerBuilder.setGuard(prevGuard);
         }
@@ -178,28 +185,49 @@ public class SecurityMBeanImplTestCase extends TestCase {
             MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
             EasyMock.replay(mbs);
 
-            String objectName = "foo.bar.testing:type=SomeMBean";
             KarafMBeanServerGuard testGuard = EasyMock.createMock(KarafMBeanServerGuard.class);
+            String objectName = "foo.bar.testing:type=SomeMBean";
             final String[] la = new String [] {"long"};
             final String[] sa = new String [] {"java.lang.String"};
-            final String[] sa2 = new String [] {"java.lang.String", "java.lang.String"};
-            EasyMock.expect(testGuard.canInvoke(EasyMock.eq(mbs), EasyMock.eq(new ObjectName(objectName)), EasyMock.eq("testMethod"), EasyMock.aryEq(la))).andReturn(true);
-            EasyMock.expect(testGuard.canInvoke(mbs, new ObjectName(objectName), "testMethod", sa)).andReturn(true);
-            EasyMock.expect(testGuard.canInvoke(mbs, new ObjectName(objectName), "otherMethod", sa2)).andReturn(false);
+            EasyMock.expect(testGuard.canInvoke(EasyMock.eq(mbs), EasyMock.eq(new ObjectName(objectName)), EasyMock.eq("testMethod"), EasyMock.aryEq(la))).andReturn(true).anyTimes();
+            EasyMock.expect(testGuard.canInvoke(EasyMock.eq(mbs), EasyMock.eq(new ObjectName(objectName)), EasyMock.eq("testMethod"), EasyMock.aryEq(sa))).andReturn(false).anyTimes();
+            EasyMock.expect(testGuard.canInvoke(EasyMock.eq(mbs), EasyMock.eq(new ObjectName(objectName)), EasyMock.eq("otherMethod"))).andReturn(true).anyTimes();
+            String objectName2 = "foo.bar.testing:type=SomeOtherMBean";
+            EasyMock.expect(testGuard.canInvoke(EasyMock.eq(mbs), EasyMock.eq(new ObjectName(objectName2)))).andReturn(true).anyTimes();
+            String objectName3 = "foo.bar.foo.testing:type=SomeOtherMBean";
+            EasyMock.expect(testGuard.canInvoke(EasyMock.eq(mbs), EasyMock.eq(new ObjectName(objectName3)))).andReturn(false).anyTimes();
             EasyMock.replay(testGuard);
             KarafMBeanServerBuilder.setGuard(testGuard);
 
             SecurityMBeanImpl mb = new SecurityMBeanImpl();
             mb.setMBeanServer(mbs);
             Map<String, List<String>> query = new HashMap<String, List<String>>();
-            query.put(objectName, Arrays.asList("testMethod(long)"));
+            query.put(objectName, Arrays.asList("otherMethod", "testMethod(long)", "testMethod(java.lang.String)"));
+            query.put(objectName2, Collections.<String>emptyList());
+            query.put(objectName3, Collections.<String>emptyList());
             TabularData result = mb.canInvoke(query);
-            assertEquals(1, result.size());
+            assertEquals(5, result.size());
 
             CompositeData cd = result.get(new Object [] {objectName, "testMethod(long)"});
             assertEquals(objectName, cd.get("ObjectName"));
             assertEquals("testMethod(long)", cd.get("Method"));
             assertEquals(true, cd.get("CanInvoke"));
+            CompositeData cd2 = result.get(new Object [] {objectName, "testMethod(java.lang.String)"});
+            assertEquals(objectName, cd2.get("ObjectName"));
+            assertEquals("testMethod(java.lang.String)", cd2.get("Method"));
+            assertEquals(false, cd2.get("CanInvoke"));
+            CompositeData cd3 = result.get(new Object [] {objectName, "otherMethod"});
+            assertEquals(objectName, cd3.get("ObjectName"));
+            assertEquals("otherMethod", cd3.get("Method"));
+            assertEquals(true, cd3.get("CanInvoke"));
+            CompositeData cd4 = result.get(new Object [] {objectName2, ""});
+            assertEquals(objectName2, cd4.get("ObjectName"));
+            assertEquals("", cd4.get("Method"));
+            assertEquals(true, cd4.get("CanInvoke"));
+            CompositeData cd5 = result.get(new Object [] {objectName3, ""});
+            assertEquals(objectName3, cd5.get("ObjectName"));
+            assertEquals("", cd5.get("Method"));
+            assertEquals(false, cd5.get("CanInvoke"));
         } finally {
             KarafMBeanServerBuilder.setGuard(prevGuard);
         }
