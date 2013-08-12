@@ -16,20 +16,24 @@
 
 package org.apache.karaf.jaas.modules.jdbc;
 
+import java.security.Principal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import javax.sql.DataSource;
+
+import org.apache.karaf.jaas.boot.principal.GroupPrincipal;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.apache.karaf.jaas.boot.principal.UserPrincipal;
 import org.apache.karaf.jaas.modules.BackingEngine;
 import org.apache.karaf.jaas.modules.encryption.EncryptionSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
 
 public class JDBCBackingEngine implements BackingEngine {
 
@@ -221,7 +225,7 @@ public class JDBCBackingEngine implements BackingEngine {
      * @param user
      * @return
      */
-    public List<RolePrincipal> listRoles(UserPrincipal user) {
+    public List<RolePrincipal> listRoles(Principal user) {
         List<RolePrincipal> roles = new ArrayList<RolePrincipal>();
 
         Connection connection = null;
@@ -406,4 +410,33 @@ public class JDBCBackingEngine implements BackingEngine {
         this.selectRolesQuery = selectRolesQuery;
     }
 
+    @Override
+    public List<GroupPrincipal> listGroups(UserPrincipal user) {
+        // Support for groups will need to be added.
+        return Collections.emptyList();
+    }
+
+    @Override
+    public void addGroup(String userName, String group) {
+        // Support for groups will need to be added.
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void deleteGroup(String userName, String group) {
+        // Support for groups will need to be added.
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void addGroupRole(String groupname, String role) {
+        // Support for groups will need to be added.
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void deleteGroupRole(String groupname, String role) {
+        // Support for groups will need to be added.
+        throw new UnsupportedOperationException();
+    }
 }
