@@ -26,12 +26,8 @@ import javax.management.ObjectName;
 import javax.management.StandardMBean;
 import javax.management.openmbean.CompositeData;
 import javax.management.openmbean.CompositeDataSupport;
-import javax.management.openmbean.CompositeType;
-import javax.management.openmbean.OpenType;
-import javax.management.openmbean.SimpleType;
 import javax.management.openmbean.TabularData;
 import javax.management.openmbean.TabularDataSupport;
-import javax.management.openmbean.TabularType;
 
 import org.apache.karaf.management.KarafMBeanServerGuard;
 import org.apache.karaf.management.boot.KarafMBeanServerBuilder;
@@ -52,6 +48,14 @@ public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
         return guard.canInvoke(mbeanServer, new ObjectName(objectName));
     }
 
+    public boolean canInvoke(String objectName, String methodName) throws Exception {
+        KarafMBeanServerGuard guard = (KarafMBeanServerGuard) KarafMBeanServerBuilder.getGuard();
+        if (guard == null)
+            return true;
+
+        return guard.canInvoke(mbeanServer, new ObjectName(objectName), methodName);
+    }
+
     public boolean canInvoke(String objectName, String methodName, String[] argumentTypes) throws Exception {
         ObjectName on = new ObjectName(objectName);
 
@@ -63,19 +67,7 @@ public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
     }
 
     public TabularData canInvoke(Map<String, List<String>> bulkQuery) throws Exception {
-        // TODO convert to constant
-        CompositeType resultType = new CompositeType("CanInvokeBulkResult",
-                "Result of the canInvoke bulk operation",
-                new String [] {"ObjectName", "Method", "CanInvoke"}, // TODO convert to constant
-                new String [] {"The ObjectName of the MBean to check",
-                "The Method to check. This can either be a bare method name which means 'any method with this name' or a specific overload such as foo(java.lang.String). If empty this means 'any' method.",
-                "true if the method or mbean can potentially be invoked by the current user"},
-                new OpenType[] {SimpleType.STRING, SimpleType.STRING, SimpleType.BOOLEAN});
-
-        // TODO convert to constant
-        TabularType tableType = new TabularType("CanInvokeResults", "Result of canInvoke() bulk operation", resultType,
-                new String [] {"ObjectName", "Method"});
-        TabularData table = new TabularDataSupport(tableType);
+        TabularData table = new TabularDataSupport(CAN_INVOKE_TABULAR_TYPE);
 
         System.out.println("*** canInvoke: " + bulkQuery);
         for (Map.Entry<String, List<String>> entry : bulkQuery.entrySet()) {
@@ -85,17 +77,23 @@ public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
             List<String> methods = entry.getValue();
             if (methods.size() == 0) {
                 boolean res = canInvoke(objectName);
-                CompositeData data = new CompositeDataSupport(resultType,
-                        new String [] {"ObjectName", "Method", "CanInvoke"}, // TODO from constant
+                CompositeData data = new CompositeDataSupport(CAN_INVOKE_RESULT_ROW_TYPE,
+                        CAN_INVOKE_RESULT_COLUMNS,
                         new Object [] {objectName, "", res});
                 table.put(data);
             } else {
                 for (String method : methods) {
                     List<String> argTypes = new ArrayList<String>();
                     String name = parseMethodName(method, argTypes);
-                    boolean res = canInvoke(objectName, name, argTypes.toArray(new String [] {}));
-                    CompositeData data = new CompositeDataSupport(resultType,
-                            new String [] {"ObjectName", "Method", "CanInvoke"},
+
+                    boolean res;
+                    if (name.equals(method)) {
+                        res = canInvoke(objectName, name);
+                    } else {
+                        res = canInvoke(objectName, name, argTypes.toArray(new String [] {}));
+                    }
+                    CompositeData data = new CompositeDataSupport(CAN_INVOKE_RESULT_ROW_TYPE,
+                            CAN_INVOKE_RESULT_COLUMNS,
                             new Object [] {objectName, method, res});
                     table.put(data);
                 }
