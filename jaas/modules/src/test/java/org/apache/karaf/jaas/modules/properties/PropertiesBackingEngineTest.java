@@ -64,6 +64,19 @@ public class PropertiesBackingEngineTest extends TestCase {
             engine.addGroup("b", "g2");
             engine.addGroupRole("g2", "role4");
 
+            assertEquals(2, engine.listUsers().size());
+            UserPrincipal upa_1 = null;
+            UserPrincipal upb_1 = null;
+            for (UserPrincipal u : engine.listUsers()) {
+                if ("a".equals(u.getName())) {
+                    upa_1 = u;
+                } else if ("b".equals(u.getName())) {
+                    upb_1 = u;
+                }
+            }
+            assertNotNull(upa_1);
+            assertNotNull(upb_1);
+
             assertEquals(3, engine.listRoles(upa).size());
             boolean foundR1_2 = false;
             boolean foundR2_2 = false;
@@ -93,6 +106,8 @@ public class PropertiesBackingEngineTest extends TestCase {
                     upb_2 = u;
                 }
             }
+            assertNotNull(upa_2);
+            assertNotNull(upb_2);
             assertEquals(3, engine2.listRoles(upa_2).size());
             boolean foundR1_3 = false;
             boolean foundR2_3 = false;

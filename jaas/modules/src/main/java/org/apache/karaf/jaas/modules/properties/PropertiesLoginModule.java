@@ -82,6 +82,11 @@ public class PropertiesLoginModule extends AbstractKarafLoginModule {
         }
         // user callback get value
         user = ((NameCallback) callbacks[0]).getName();
+        if (user.startsWith(PropertiesBackingEngine.GROUP_PREFIX)) {
+            // You cannot log in under a group name
+            throw new FailedLoginException("login failed");
+        }
+
         // password callback get value
         String password = new String(((PasswordCallback) callbacks[1]).getPassword());
 

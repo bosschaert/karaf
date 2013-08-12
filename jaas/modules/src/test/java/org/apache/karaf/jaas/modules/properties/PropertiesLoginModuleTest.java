@@ -104,7 +104,7 @@ public class PropertiesLoginModuleTest {
                     }
                 }
             };
-            module.initialize(null, cb, null, options);
+            module.initialize(new Subject(), cb, null, options);
             try {
                 module.login();
                 Assert.fail("The login should have failed as the passwords didn't match");
@@ -171,6 +171,55 @@ public class PropertiesLoginModuleTest {
             Assert.assertTrue(foundUser);
             Assert.assertTrue(foundGroup);
             Assert.assertTrue(foundRole);
+        } finally {
+            if (!f.delete()) {
+                Assert.fail("Could not delete temporary file: " + f);
+            }
+        }
+    }
+
+    // This is a fairly important test that ensures that you cannot log in under the name of a
+    // group directly.
+    @Test
+    public void testCannotLoginAsGroupDirectly() throws Exception {
+        testCannotLoginAsGroupDirectly("group1");
+        testCannotLoginAsGroupDirectly("_g_:group1");
+        testCannotLoginAsGroupDirectly(PropertiesBackingEngine.GROUP_PREFIX + "group1");
+    }
+
+    private void testCannotLoginAsGroupDirectly(final String name) throws IOException, LoginException {
+        File f = File.createTempFile(getClass().getName(), ".tmp");
+        try {
+            Properties p = new Properties(f);
+            PropertiesBackingEngine pbe = new PropertiesBackingEngine(p);
+            pbe.addUser("abc", "xyz");
+            pbe.addRole("abc", "myrole");
+            pbe.addUser("pqr", "abc");
+            pbe.addGroup("pqr", "group1");
+            pbe.addGroupRole("group1", "r1");
+
+            PropertiesLoginModule module = new PropertiesLoginModule();
+            Map<String, String> options = new HashMap<String, String>();
+            options.put(PropertiesLoginModule.USER_FILE, f.getAbsolutePath());
+            CallbackHandler cb = new CallbackHandler() {
+                @Override
+                public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
+                    for (Callback cb : callbacks) {
+                        if (cb instanceof NameCallback) {
+                            ((NameCallback) cb).setName(name);
+                        } else if (cb instanceof PasswordCallback) {
+                            ((PasswordCallback) cb).setPassword("group".toCharArray());
+                        }
+                    }
+                }
+            };
+            module.initialize(new Subject(), cb, null, options);
+            try {
+                module.login();
+                Assert.fail("The login should have failed as you cannot log in under a group name directly");
+            } catch (FailedLoginException fle) {
+                // good
+            }
         } finally {
             if (!f.delete()) {
                 Assert.fail("Could not delete temporary file: " + f);
