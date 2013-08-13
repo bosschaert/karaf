@@ -33,7 +33,7 @@ import javax.management.openmbean.TabularType;
  * consoles to ensure that only operations appropriate for the current user are presented.<p/>
  * This MBean does not actually invoke any operations on the given objects, it only checks permissions.
  */
-public interface SecurityMBean {
+public interface JMXSecurityMBean {
     /**
      * The Tabular Type returned by the {@link #canInvoke(Map)} operation. The rows consist of
      * {@link #CAN_INVOKE_RESULT_ROW_TYPE} entries.

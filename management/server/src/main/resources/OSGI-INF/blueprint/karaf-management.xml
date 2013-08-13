@@ -116,7 +116,7 @@
     </bean>
 
     <!-- Security MBean -->
-    <bean id="jmxSecurityMBean" class="org.apache.karaf.management.internal.SecurityMBeanImpl">
+    <bean id="jmxSecurityMBean" class="org.apache.karaf.management.internal.JMXSecurityMBeanImpl">
         <property name="MBeanServer" ref="mbeanServer"/>
     </bean>
 

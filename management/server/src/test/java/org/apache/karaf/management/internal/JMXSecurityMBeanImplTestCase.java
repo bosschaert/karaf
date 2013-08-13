@@ -35,12 +35,12 @@ import org.apache.karaf.management.KarafMBeanServerGuard;
 import org.apache.karaf.management.boot.KarafMBeanServerBuilder;
 import org.easymock.EasyMock;
 
-public class SecurityMBeanImplTestCase extends TestCase {
+public class JMXSecurityMBeanImplTestCase extends TestCase {
     public void testMBeanServerAccessors() throws Exception {
         MBeanServer mbs = EasyMock.createMock(MBeanServer.class);
         EasyMock.replay(mbs);
 
-        SecurityMBeanImpl mb = new SecurityMBeanImpl();
+        JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
         mb.setMBeanServer(mbs);
         assertSame(mbs, mb.getMBeanServer());
     }
@@ -57,7 +57,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
             EasyMock.replay(testGuard);
             KarafMBeanServerBuilder.setGuard(testGuard);
 
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             mb.setMBeanServer(mbs);
             assertTrue(mb.canInvoke(objectName));
         } finally {
@@ -77,7 +77,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
             EasyMock.replay(testGuard);
             KarafMBeanServerBuilder.setGuard(testGuard);
 
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             mb.setMBeanServer(mbs);
             assertFalse(mb.canInvoke(objectName));
         } finally {
@@ -97,7 +97,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
             EasyMock.replay(testGuard);
             KarafMBeanServerBuilder.setGuard(testGuard);
 
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             mb.setMBeanServer(mbs);
             mb.canInvoke(objectName);
             fail("Should have thrown an exception");
@@ -111,7 +111,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
     public void testCanInvokeMBeanNoGuard() throws Exception {
         InvocationHandler prevGuard = KarafMBeanServerBuilder.getGuard();
         try {
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             assertTrue(mb.canInvoke("foo.bar.testing:type=SomeMBean"));
         } finally {
             KarafMBeanServerBuilder.setGuard(prevGuard);
@@ -135,7 +135,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
             EasyMock.replay(testGuard);
             KarafMBeanServerBuilder.setGuard(testGuard);
 
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             mb.setMBeanServer(mbs);
             assertTrue(mb.canInvoke(objectName, "testMethod", la));
             assertTrue(mb.canInvoke(objectName, "testMethod", sa));
@@ -158,7 +158,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
             EasyMock.replay(testGuard);
             KarafMBeanServerBuilder.setGuard(testGuard);
 
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             mb.setMBeanServer(mbs);
             mb.canInvoke(objectName, "testMethod", ea);
             fail("Should have thrown an exception");
@@ -172,7 +172,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
     public void testCanInvokeMethodNoGuard() throws Exception {
         InvocationHandler prevGuard = KarafMBeanServerBuilder.getGuard();
         try {
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             assertTrue(mb.canInvoke("foo.bar.testing:type=SomeMBean", "someMethod", new String [] {}));
         } finally {
             KarafMBeanServerBuilder.setGuard(prevGuard);
@@ -199,7 +199,7 @@ public class SecurityMBeanImplTestCase extends TestCase {
             EasyMock.replay(testGuard);
             KarafMBeanServerBuilder.setGuard(testGuard);
 
-            SecurityMBeanImpl mb = new SecurityMBeanImpl();
+            JMXSecurityMBeanImpl mb = new JMXSecurityMBeanImpl();
             mb.setMBeanServer(mbs);
             Map<String, List<String>> query = new HashMap<String, List<String>>();
             query.put(objectName, Arrays.asList("otherMethod", "testMethod(long)", "testMethod(java.lang.String)"));

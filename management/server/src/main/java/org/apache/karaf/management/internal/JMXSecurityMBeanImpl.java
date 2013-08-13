@@ -30,14 +30,14 @@ import javax.management.openmbean.TabularData;
 import javax.management.openmbean.TabularDataSupport;
 
 import org.apache.karaf.management.KarafMBeanServerGuard;
-import org.apache.karaf.management.SecurityMBean;
+import org.apache.karaf.management.JMXSecurityMBean;
 import org.apache.karaf.management.boot.KarafMBeanServerBuilder;
 
-public class SecurityMBeanImpl extends StandardMBean implements SecurityMBean {
+public class JMXSecurityMBeanImpl extends StandardMBean implements JMXSecurityMBean {
     private MBeanServer mbeanServer;
 
-    public SecurityMBeanImpl() throws NotCompliantMBeanException {
-        super(SecurityMBean.class);
+    public JMXSecurityMBeanImpl() throws NotCompliantMBeanException {
+        super(JMXSecurityMBean.class);
     }
 
     public boolean canInvoke(String objectName) throws Exception {
