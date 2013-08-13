@@ -273,7 +273,7 @@ public class KarafMBeanServerGuardTest extends TestCase {
         conf4.put(Constants.SERVICE_PID, "jmx.acl");
 
         ConfigurationAdmin ca = getMockConfigAdmin2(conf1, conf2, conf3, conf4);
-        assertEquals("Precondition", 4, ca.listConfigurations(null).length);
+        assertEquals("Precondition", 4, ca.listConfigurations("(service.pid=jmx.acl*)").length);
 
         KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
         guard.setConfigAdmin(ca);
@@ -391,7 +391,7 @@ public class KarafMBeanServerGuardTest extends TestCase {
         for (Configuration c : allConfigs) {
             EasyMock.expect(ca.getConfiguration(c.getPid())).andReturn(c).anyTimes();
         }
-        EasyMock.expect(ca.listConfigurations((String) EasyMock.anyObject())).andReturn(
+        EasyMock.expect(ca.listConfigurations(EasyMock.eq("(service.pid=jmx.acl*)"))).andReturn(
                 allConfigs.toArray(new Configuration [] {})).anyTimes();
         EasyMock.replay(ca);
         return ca;

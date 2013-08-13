@@ -243,9 +243,8 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         List<String> roles = new ArrayList<String>();
 
         List<String> allPids = new ArrayList<String>();
-        // TODO fine tune filter !?
         try {
-            for (Configuration config : configAdmin.listConfigurations(null)) {
+            for (Configuration config : configAdmin.listConfigurations("(service.pid=jmx.acl*)")) {
                 allPids.add(config.getPid());
             }
         } catch (InvalidSyntaxException ise) {
@@ -511,7 +510,6 @@ public class KarafMBeanServerGuard implements InvocationHandler {
 
     private List<String> getNameSegments(ObjectName objectName) {
         List<String> segs = new ArrayList<String>();
-        // segs.addAll(Arrays.asList(objectName.getDomain().split("[.]")));
         segs.add(objectName.getDomain());
 
         // TODO can an object name property contain a comma as key or value?
@@ -567,17 +565,12 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         }
 
         AccessControlContext acc = AccessController.getContext();
-        if (acc == null)
+        if (acc == null) {
             return false;
+        }
         Subject subject = Subject.getSubject(acc);
 
         if (subject == null) {
-            /* */
-            // TODO just temp!!!
-            if (role.equals("manager") || role.equals("viewer")) {
-                return true;
-            }
-            /* */
             return false;
         }
 
