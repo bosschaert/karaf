@@ -310,6 +310,44 @@ public class KarafMBeanServerGuardTest extends TestCase {
                 guard.getRequiredRoles(on, "test", new Object[] {new Long(17)}, new String [] {"java.lang.Long"}));
     }
 
+    public void testRequiredRolesMethodNameWildcard2() throws Exception {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("ge", "janitor");
+        configuration.put("get", "admin");
+        configuration.put("get*", "viewer");
+        configuration.put("*", "manager");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+        assertEquals(Collections.singletonList("viewer"),
+                guard.getRequiredRoles(on, "getFoo", new Object[] {}, new String [] {}));
+        assertEquals(Collections.singletonList("admin"),
+                guard.getRequiredRoles(on, "get", new Object[] {}, new String [] {}));
+        assertEquals(Collections.singletonList("janitor"),
+                guard.getRequiredRoles(on, "ge", new Object[] {}, new String [] {}));
+    }
+
+    public void testRequiredRolesMethodNameWildcard3() throws Exception {
+        Dictionary<String, Object> configuration = new Hashtable<String, Object>();
+        configuration.put("get*", "viewer");
+        configuration.put("*", "admin");
+        ConfigurationAdmin ca = getMockConfigAdmin(configuration);
+
+        KarafMBeanServerGuard guard = new KarafMBeanServerGuard();
+        guard.setConfigAdmin(ca);
+
+        ObjectName on = ObjectName.getInstance("foo.bar:type=Test");
+        assertEquals(Collections.singletonList("viewer"),
+                guard.getRequiredRoles(on, "getFoo", new Object[] {}, new String [] {}));
+        assertEquals(Collections.singletonList("viewer"),
+                guard.getRequiredRoles(on, "get", new Object[] {}, new String [] {}));
+        assertEquals(Collections.singletonList("admin"),
+                guard.getRequiredRoles(on, "ge", new Object[] {}, new String [] {}));
+    }
+
     @SuppressWarnings("unchecked")
     public void testRequiredRolesMethodNameWildcardEmpty() throws Exception {
         Dictionary<String, Object> conf1 = new Hashtable<String, Object>();
