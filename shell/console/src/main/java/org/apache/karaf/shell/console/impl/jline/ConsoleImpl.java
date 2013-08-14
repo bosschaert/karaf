@@ -86,6 +86,7 @@ public class ConsoleImpl implements Console
     private PrintStream err;
     private Thread thread;
     private final CommandProcessor baseProcessor;
+    private final BundleContext bundleContext;
 
     public ConsoleImpl(CommandProcessor processor,
                    InputStream in,
@@ -103,6 +104,7 @@ public class ConsoleImpl implements Console
         this.terminal = term == null ? new UnsupportedTerminal() : term;
         this.consoleInput = new ConsoleInputStream();
         this.baseProcessor = processor;
+        this.bundleContext = bc;
 
         // this.session = processor.createSession(this.consoleInput, this.out, this.err);
         this.session = new InactiveSession();
@@ -182,20 +184,22 @@ public class ConsoleImpl implements Console
 
         /* */
         System.out.println("@@@ Deferred creation of real session");
-        if (session instanceof InactiveSession) {
-            // make it active
-            // RoleSensitiveCommandProcessor rscp = new RoleSensitiveCommandProcessor(baseProcessor);
-            // CommandProcessorImpl cp = new MyCommandProcessorImpl(null /* TODO what to do about the ThreadIO ? */);
-            CommandSession s = baseProcessor.createSession(this.consoleInput, this.out, this.err);
-
-            Map<String, Object> m = ((InactiveSession) session).getAttributes();
-            for (Map.Entry<String, Object> entry : m.entrySet()) {
-                s.put(entry.getKey(), entry.getValue());
-            }
-            ((InactiveSession) session).setDelegate(s);
-            session = s;
-            System.out.println("@@@ created Real Session");
+        if (!(session instanceof InactiveSession)) {
+            throw new IllegalStateException("Should be an Inactive Session here, about to make it active");
         }
+
+        // make it active
+        MyCommandProcessorImpl myCP = new MyCommandProcessorImpl(bundleContext);
+        CommandSession s = myCP.createSession(consoleInput, out, err);
+//            CommandSession s = baseProcessor.createSession(this.consoleInput, this.out, this.err);
+
+        Map<String, Object> m = ((InactiveSession) session).getAttributes();
+        for (Map.Entry<String, Object> entry : m.entrySet()) {
+            s.put(entry.getKey(), entry.getValue());
+        }
+        ((InactiveSession) session).setDelegate(s);
+        session = s;
+        System.out.println("@@@ created Real Session");
 
 
         /* */
@@ -236,6 +240,8 @@ public class ConsoleImpl implements Console
                 ShellUtil.logException(session, t);
             }
         }
+
+        myCP.close();
         close(true);
     }
 
