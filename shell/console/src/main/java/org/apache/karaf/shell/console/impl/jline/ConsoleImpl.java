@@ -27,6 +27,9 @@ import java.io.InputStreamReader;
 import java.io.InterruptedIOException;
 import java.io.PrintStream;
 import java.io.Reader;
+import java.security.AccessControlContext;
+import java.security.AccessController;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -34,10 +37,13 @@ import java.util.concurrent.BlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import javax.security.auth.Subject;
+
 import jline.Terminal;
 import jline.UnsupportedTerminal;
 import jline.console.ConsoleReader;
 import jline.console.history.PersistentHistory;
+
 import org.apache.felix.gogo.runtime.Parser;
 import org.apache.felix.service.command.CommandProcessor;
 import org.apache.felix.service.command.CommandSession;
@@ -49,6 +55,7 @@ import org.apache.karaf.shell.console.Console;
 import org.apache.karaf.shell.console.SessionProperties;
 import org.apache.karaf.shell.console.completer.CommandsCompleter;
 import org.apache.karaf.shell.util.ShellUtil;
+import org.osgi.framework.BundleContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,7 +71,7 @@ public class ConsoleImpl implements Console
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Console.class);
 
-    protected CommandSession session;
+    protected volatile CommandSession session;
     private ConsoleReader reader;
     private BlockingQueue<Integer> queue;
     private boolean interrupt;
@@ -78,6 +85,7 @@ public class ConsoleImpl implements Console
     private PrintStream out;
     private PrintStream err;
     private Thread thread;
+    private final CommandProcessor baseProcessor;
 
     public ConsoleImpl(CommandProcessor processor,
                    InputStream in,
@@ -85,7 +93,8 @@ public class ConsoleImpl implements Console
                    PrintStream err,
                    Terminal term,
                    String encoding,
-                   Runnable closeCallback)
+                   Runnable closeCallback,
+                   BundleContext bc)
     {
         this.in = in;
         this.out = out;
@@ -93,7 +102,10 @@ public class ConsoleImpl implements Console
         this.queue = new ArrayBlockingQueue<Integer>(1024);
         this.terminal = term == null ? new UnsupportedTerminal() : term;
         this.consoleInput = new ConsoleInputStream();
-        this.session = processor.createSession(this.consoleInput, this.out, this.err);
+        this.baseProcessor = processor;
+
+        // this.session = processor.createSession(this.consoleInput, this.out, this.err);
+        this.session = new InactiveSession();
         this.session.put("SCOPE", "shell:bundle:*");
         this.session.put("SUBSHELL", "");
         this.closeCallback = closeCallback;
@@ -109,7 +121,7 @@ public class ConsoleImpl implements Console
         }
 
 		final File file = getHistoryFile();
-		
+
         try {
         	file.getParentFile().mkdirs();
 			reader.setHistory(new KarafFileHistory(file));
@@ -163,6 +175,31 @@ public class ConsoleImpl implements Console
 
     public void run()
     {
+      // System.out.println("@@@ About to obtain security information");
+      AccessControlContext acc = AccessController.getContext();
+      Subject sub = Subject.getSubject(acc);
+      System.out.println("@@@ Subject: " + sub);
+
+        /* */
+        System.out.println("@@@ Deferred creation of real session");
+        if (session instanceof InactiveSession) {
+            // make it active
+            // RoleSensitiveCommandProcessor rscp = new RoleSensitiveCommandProcessor(baseProcessor);
+            // CommandProcessorImpl cp = new MyCommandProcessorImpl(null /* TODO what to do about the ThreadIO ? */);
+            CommandSession s = baseProcessor.createSession(this.consoleInput, this.out, this.err);
+
+            Map<String, Object> m = ((InactiveSession) session).getAttributes();
+            for (Map.Entry<String, Object> entry : m.entrySet()) {
+                s.put(entry.getKey(), entry.getValue());
+            }
+            ((InactiveSession) session).setDelegate(s);
+            session = s;
+            System.out.println("@@@ created Real Session");
+        }
+
+
+        /* */
+
         thread = Thread.currentThread();
         CommandSessionHolder.setSession(session);
         running = true;
@@ -221,12 +258,12 @@ public class ConsoleImpl implements Console
             if (reader.getHistory().size()==0) {
                 reader.getHistory().add(command);
             } else {
-                // jline doesn't add blank lines to the history so we don't 
+                // jline doesn't add blank lines to the history so we don't
                 // need to replace the command in jline's console history with
                 // an indented one
                 if (command.length() > 0 && !" ".equals(command)) {
-                    reader.getHistory().replace(command);    
-                }                                
+                    reader.getHistory().replace(command);
+                }
             }
 		    try {
 		        new Parser(command).program();
@@ -448,4 +485,77 @@ public class ConsoleImpl implements Console
         }
     }
 
+    private static class InactiveSession implements CommandSession {
+        final Map<String, Object> attrs = new HashMap<String, Object>();
+        private volatile CommandSession delegate;
+
+        @Override
+        public Object execute(CharSequence commandline) throws Exception {
+            throw new UnsupportedOperationException();
+        }
+
+        void setDelegate(CommandSession s) {
+            delegate = s;
+        }
+
+        @Override
+        public void close() {
+            if (delegate != null)
+                delegate.close();
+        }
+
+        @Override
+        public InputStream getKeyboard() {
+            if (delegate != null)
+                return delegate.getKeyboard();
+
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PrintStream getConsole() {
+            if (delegate != null)
+                return delegate.getConsole();
+
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Object get(String name) {
+            if (delegate != null)
+                return delegate.get(name);
+
+            return attrs.get(name);
+        }
+
+        Map<String, Object> getAttributes() {
+            return attrs;
+        }
+
+        @Override
+        public void put(String name, Object value) {
+            if (delegate != null) {
+                delegate.put(name, value);
+                return;
+            }
+
+            attrs.put(name, value);
+        }
+
+        @Override
+        public CharSequence format(Object target, int level) {
+            if (delegate != null)
+                return delegate.format(target, level);
+
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Object convert(Class<?> type, Object instance) {
+            if (delegate != null)
+                return delegate.convert(type, instance);
+
+            throw new UnsupportedOperationException();
+        }
+    }
 }

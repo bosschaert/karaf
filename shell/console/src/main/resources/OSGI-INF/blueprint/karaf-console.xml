@@ -29,6 +29,7 @@
     <reference id="commandProcessor" interface="org.apache.felix.service.command.CommandProcessor" />
 
     <bean id="consoleFactoryService" class="org.apache.karaf.shell.console.impl.jline.ConsoleFactoryService">
+        <argument ref="blueprintBundleContext"/>
     </bean>    
     <service interface="org.apache.karaf.shell.console.ConsoleFactory" ref="consoleFactoryService" />
 
