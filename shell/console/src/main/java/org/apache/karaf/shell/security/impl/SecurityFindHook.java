@@ -24,19 +24,18 @@ import org.osgi.framework.ServiceReference;
 import org.osgi.framework.hooks.service.FindHook;
 
 public class SecurityFindHook implements FindHook {
-    private final BundleContext myBundleContext;
-    private final CommandProxyCatalog commandProxyCatalog;
+    private CommandProxyCatalog commandProxyCatalog;
 
-    SecurityFindHook(BundleContext myBC, CommandProxyCatalog cpc) {
-        myBundleContext = myBC;
+    public void setCommandProxyCatalog(CommandProxyCatalog cpc) {
         commandProxyCatalog = cpc;
+        /* */ System.out.println("### Set CPC: " + cpc);
     }
 
     @Override
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
-        if (myBundleContext.equals(context) || context.getBundle().getBundleId() == 0) {
-            // don't hide anything from myself nor the system bundle
+        if (context.getBundle().getBundleId() == 0) {
+            // don't hide anything from the system bundle
             return;
         }
 

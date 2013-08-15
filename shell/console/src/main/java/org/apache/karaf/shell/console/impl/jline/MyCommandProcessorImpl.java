@@ -58,30 +58,12 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         System.out.println("*** Closed MyCommandProcessor");
     }
 
-
-
-    @Override
-    public void addCommand(String scope, Object target) {
-        super.addCommand(scope, target);
-        System.out.println("### Adding object command: " + scope + ":" + target);
-    }
-
-    @Override
-    public void addCommand(String scope, Object target, Class<?> functions) {
-        super.addCommand(scope, target, functions);
-        System.out.println("### Adding commands: " + scope + ":" + functions);
-    }
-
-    @Override
-    public void addCommand(String scope, Object target, String function) {
-        super.addCommand(scope, target, function);
-        System.out.println("### Adding command: " + scope + ":" + function);
-    }
-
     private ServiceTracker trackCommands(final BundleContext context) throws InvalidSyntaxException
     {
         Filter filter = context.createFilter(String.format("(&(%s=*)(%s=*))",
             CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION));
+//        Filter filter = context.createFilter(String.format("(&(!(%s=region))(%s=*))",
+//                CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION));
 
         return new ServiceTracker(context, filter, null)
         {

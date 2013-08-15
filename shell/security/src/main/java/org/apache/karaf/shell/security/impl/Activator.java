@@ -29,11 +29,12 @@ public class Activator implements BundleActivator {
 
     @Override
     public void start(BundleContext context) throws Exception {
+        // TODO turn into a blueprint component...
         System.out.println("**** Started Activator");
-        CommandProxyCatalog cpc = new CommandProxyCatalog();
+        CommandProxyCatalog cpc = new CommandProxyCatalog(context);
 
-        context.registerService(EventListenerHook.class, new SecuringEventHook(context), null);
-        context.registerService(FindHook.class, new SecurityFindHook(context), null);
+        context.registerService(EventListenerHook.class, new SecuringEventHook(context, cpc), null);
+        context.registerService(FindHook.class, new SecurityFindHook(context, cpc), null);
     }
 
     @Override

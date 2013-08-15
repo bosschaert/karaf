@@ -30,40 +30,49 @@ import org.osgi.framework.ServiceReference;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
-import org.osgi.util.tracker.ServiceTracker;
 
-class CommandProxyCatalog {
-    private static final String PROXY_IDENTIFICATION_PROPERTY = ".Karaf-Proxied"; // TODO can we remove this?
+public class CommandProxyCatalog {
     private static final String PROXY_COMMAND_ROLES_PROPERTY = "org.apache.karaf.command.roles";
 
-    private final ConcurrentMap<ServiceReference<?>, ServiceReference<?>> proxyMap =
-            new ConcurrentHashMap<ServiceReference<?>, ServiceReference<?>>();
-    private final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
+    private final ConcurrentMap<ServiceReference<?>, ServiceRegistrationHolder> proxyMap =
+            new ConcurrentHashMap<ServiceReference<?>, ServiceRegistrationHolder>();
+    private ConfigurationAdmin configAdmin;
 
-    public CommandProxyCatalog(BundleContext bc) {
-        // TODO turn into a blueprint component...
-        configAdminTracker = new ServiceTracker<ConfigurationAdmin, ConfigurationAdmin>(bc, ConfigurationAdmin.class, null);
-        configAdminTracker.open();
+    public void setConfigAdmin(ConfigurationAdmin configAdmin) {
+        this.configAdmin = configAdmin;
     }
 
     boolean isProxy(ServiceReference<?> sr) {
-        return sr.getProperty(PROXY_IDENTIFICATION_PROPERTY) != null;
+        return sr.getProperty(PROXY_COMMAND_ROLES_PROPERTY) != null;
     }
 
     void proxy(ServiceReference<?> originalRef) throws Exception {
         if (proxyMap.containsKey(originalRef)) {
-            // alreadyProxied.
+            return;
+        }
+        if (isProxy(originalRef)) {
             return;
         }
 
         Dictionary<String, Object> props = proxyProperties(originalRef);
         /* */ System.out.println("@@@ Proxying: " + props);
         BundleContext context = originalRef.getBundle().getBundleContext();
+
+        // make sure it's on the map before the proxy is registered, as that can trigger
+        // another call into this method, and we need to make sure that it doesn't proxy
+        // the service again.
+        ServiceRegistrationHolder registrationHolder = new ServiceRegistrationHolder();
+        proxyMap.put(originalRef, registrationHolder);
+
         ServiceRegistration<?> proxyReg = context.registerService((String[]) originalRef.getProperty(Constants.OBJECTCLASS),
                 context.getService(originalRef), props);
-        proxyMap.put(originalRef, proxyReg.getReference());
+
+        // put the actual service registration in the holder
+        registrationHolder.registration = proxyReg;
 
         // TODO register listener that unregisters the proxy once the original service is gone.
+        // Note that this listener must be registered under the bundlecontext of the system bundle
+        // otherwise we won't get notified!
     }
 
     private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr) throws Exception {
@@ -74,17 +83,24 @@ class CommandProxyCatalog {
         }
         List<String> roles = getRoles(sr);
         p.put(PROXY_COMMAND_ROLES_PROPERTY, roles);
-        p.put(PROXY_IDENTIFICATION_PROPERTY, true);
         return p;
     }
 
     private List<String> getRoles(ServiceReference<?> sr) throws Exception {
         String scope = "" + sr.getProperty("osgi.command.scope");
         String function = "" + sr.getProperty("osgi.command.function");
-        ConfigurationAdmin ca = configAdminTracker.getService();
-        if (ca == null)
-            return null;
-        for (Configuration c : ca.listConfigurations("service.pid=" + PROXY_COMMAND_ROLES_PROPERTY + "." + scope)) {
+        if (scope == null || function == null)
+            return Collections.emptyList();
+
+        if (scope.trim().equals("*")) {
+            scope = "xxglobalxx"; // TODO what to do here?
+        }
+
+        Configuration[] configs = configAdmin.listConfigurations("(service.pid=" + PROXY_COMMAND_ROLES_PROPERTY + "." + scope + ")");
+        if (configs == null)
+            return Collections.emptyList();
+
+        for (Configuration c : configs) {
             List<String> l = new ArrayList<String>();
             Object roles = c.getProperties().get(function);
             if (roles instanceof String) {
@@ -95,5 +111,9 @@ class CommandProxyCatalog {
             return l;
         }
         return Collections.emptyList();
+    }
+
+    private static class ServiceRegistrationHolder {
+        ServiceRegistration<?> registration;
     }
 }

@@ -28,12 +28,11 @@ import org.osgi.framework.hooks.service.EventListenerHook;
 import org.osgi.framework.hooks.service.ListenerHook.ListenerInfo;
 
 public class SecuringEventHook implements EventListenerHook {
-    private final BundleContext myBundleContext;
-    private final CommandProxyCatalog commandProxyCatalog;
+    private CommandProxyCatalog commandProxyCatalog;
 
-    SecuringEventHook(BundleContext myBC, CommandProxyCatalog cpc) {
-        myBundleContext = myBC;
+    public void setCommandProxyCatalog(CommandProxyCatalog cpc) {
         commandProxyCatalog = cpc;
+        /* */ System.out.println("+++ Set CPC: " + cpc);
     }
 
     @Override
@@ -43,8 +42,8 @@ public class SecuringEventHook implements EventListenerHook {
         if (sr.getProperty("osgi.command.function") != null && !commandProxyCatalog.isProxy(sr)) {
             for (Iterator<Map.Entry<BundleContext, Collection<ListenerInfo>>> i = listeners.entrySet().iterator(); i.hasNext(); ) {
                 Entry<BundleContext, Collection<ListenerInfo>> entry = i.next();
-                if (myBundleContext.equals(entry.getKey()) || entry.getKey().getBundle().getBundleId() == 0) {
-                    // don't hide anything from me nor the system bundle
+                if (entry.getKey().getBundle().getBundleId() == 0) {
+                    // don't hide anything from the system bundle
                     continue;
                 }
 
@@ -57,16 +56,5 @@ public class SecuringEventHook implements EventListenerHook {
                 i.remove();
             }
         }
-    }
-
-    private String parseValue(Collection<ListenerInfo> value) {
-        StringBuilder sb = new StringBuilder();
-        for (ListenerInfo li : value) {
-            if (sb.length() != 0)
-                sb.append(',');
-
-            sb.append(li.getFilter());
-        }
-        return sb.toString();
     }
 }
