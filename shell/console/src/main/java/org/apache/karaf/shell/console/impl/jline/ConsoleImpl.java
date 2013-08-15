@@ -27,8 +27,6 @@ import java.io.InputStreamReader;
 import java.io.InterruptedIOException;
 import java.io.PrintStream;
 import java.io.Reader;
-import java.security.AccessControlContext;
-import java.security.AccessController;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -36,8 +34,6 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.security.auth.Subject;
 
 import jline.Terminal;
 import jline.UnsupportedTerminal;
@@ -178,9 +174,9 @@ public class ConsoleImpl implements Console
     public void run()
     {
       // System.out.println("@@@ About to obtain security information");
-      AccessControlContext acc = AccessController.getContext();
-      Subject sub = Subject.getSubject(acc);
-      System.out.println("@@@ Subject: " + sub);
+//      AccessControlContext acc = AccessController.getContext();
+//      Subject sub = Subject.getSubject(acc);
+//      System.out.println("@@@ Subject: " + sub);
 
         /* */
         System.out.println("@@@ Deferred creation of real session");

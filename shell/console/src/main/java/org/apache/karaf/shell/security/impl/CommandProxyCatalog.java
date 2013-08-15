@@ -32,7 +32,7 @@ import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 
 public class CommandProxyCatalog {
-    private static final String PROXY_COMMAND_ROLES_PROPERTY = "org.apache.karaf.command.roles";
+    public static final String PROXY_COMMAND_ROLES_PROPERTY = "org.apache.karaf.command.roles";
 
     private final ConcurrentMap<ServiceReference<?>, ServiceRegistrationHolder> proxyMap =
             new ConcurrentHashMap<ServiceReference<?>, ServiceRegistrationHolder>();

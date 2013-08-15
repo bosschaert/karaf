@@ -1,7 +1,11 @@
 package org.apache.karaf.shell.console.impl.jline;
 
+import java.security.AccessControlContext;
+import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.List;
+
+import javax.security.auth.Subject;
 
 import org.apache.felix.gogo.api.CommandSessionListener;
 import org.apache.felix.gogo.runtime.CommandProcessorImpl;
@@ -11,6 +15,8 @@ import org.apache.felix.service.command.CommandProcessor;
 import org.apache.felix.service.command.Converter;
 import org.apache.felix.service.command.Function;
 import org.apache.felix.service.threadio.ThreadIO;
+import org.apache.karaf.jaas.boot.principal.RolePrincipal;
+import org.apache.karaf.shell.security.impl.CommandProxyCatalog;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
@@ -20,6 +26,7 @@ import org.osgi.util.tracker.ServiceTracker;
 public class MyCommandProcessorImpl extends CommandProcessorImpl {
     private final BundleContext bundleContext;
     private final ServiceReference<ThreadIO> threadIOServiceReference;
+    private final String roleClause;
     private final ServiceTracker commandTracker;
     private final ServiceTracker converterTracker;
     private final ServiceTracker listenerTracker;
@@ -32,6 +39,24 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         super(bc.getService(sr));
         bundleContext = bc;
         threadIOServiceReference = sr;
+
+        AccessControlContext acc = AccessController.getContext();
+        Subject sub = Subject.getSubject(acc);
+        System.out.println("!!! Subject: " + sub);
+
+        // TODO cater for custom roles
+        // TODO is this search clause the most efficient way to find the appropriate commands?
+        StringBuilder sb = new StringBuilder();
+        sb.append("(|");
+        for (RolePrincipal rp : sub.getPrincipals(RolePrincipal.class)) {
+            sb.append('(');
+            sb.append(CommandProxyCatalog.PROXY_COMMAND_ROLES_PROPERTY);
+            sb.append('=');
+            sb.append(rp.getName());
+            sb.append(')');
+        }
+        sb.append(')');
+        roleClause = sb.toString();
 
         addConstant(Activator.CONTEXT, bc);
         addCommand("osgi", this, "addCommand");
@@ -60,9 +85,9 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
 
     private ServiceTracker trackCommands(final BundleContext context) throws InvalidSyntaxException
     {
-        Filter filter = context.createFilter(String.format("(&(%s=*)(%s=*))",
-            CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION));
-//        Filter filter = context.createFilter(String.format("(&(!(%s=region))(%s=*))",
+        Filter filter = context.createFilter(String.format("(&(%s=*)(%s=*)%s)",
+            CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION, roleClause));
+//        Filter filter = context.createFilter(String.format("(&(!(%s=*))(%s=*))",
 //                CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION));
 
         return new ServiceTracker(context, filter, null)
