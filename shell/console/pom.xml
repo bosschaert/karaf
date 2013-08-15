@@ -146,6 +146,7 @@
                         </Export-Package>
                         <Private-Package>
                         	org.apache.karaf.shell.console.impl*,
+                            org.apache.karaf.shell.security.impl*,
                         	org.apache.felix.gogo.runtime*;-split-package:=first
                         </Private-Package>
                         <Bundle-Activator>
