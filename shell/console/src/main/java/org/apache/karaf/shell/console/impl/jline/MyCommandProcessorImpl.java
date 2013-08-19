@@ -4,6 +4,7 @@ import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import javax.security.auth.Subject;
 
@@ -44,11 +45,15 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         Subject sub = Subject.getSubject(acc);
         System.out.println("!!! Subject: " + sub);
 
+        Set<RolePrincipal> rolePrincipals = sub.getPrincipals(RolePrincipal.class);
+        if (rolePrincipals.size() == 0)
+            throw new IllegalStateException("Current user has no associated roles.");
+
         // TODO cater for custom roles
         // TODO is this search clause the most efficient way to find the appropriate commands?
         StringBuilder sb = new StringBuilder();
         sb.append("(|");
-        for (RolePrincipal rp : sub.getPrincipals(RolePrincipal.class)) {
+        for (RolePrincipal rp : rolePrincipals) {
             sb.append('(');
             sb.append(CommandProxyCatalog.PROXY_COMMAND_ROLES_PROPERTY);
             sb.append('=');

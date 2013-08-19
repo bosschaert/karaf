@@ -55,7 +55,7 @@ public class CommandProxyCatalog {
         }
 
         Dictionary<String, Object> props = proxyProperties(originalRef);
-        /* */ System.out.println("@@@ Proxying: " + props);
+        // /* */ System.out.println("@@@ Proxying: " + props);
         BundleContext context = originalRef.getBundle().getBundleContext();
 
         // make sure it's on the map before the proxy is registered, as that can trigger
