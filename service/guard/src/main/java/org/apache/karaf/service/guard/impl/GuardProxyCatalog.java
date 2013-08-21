@@ -43,8 +43,8 @@ public class GuardProxyCatalog {
 
     private final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
     private final ServiceTracker<ProxyManager, ProxyManager> proxyManagerTracker;
-    private final ConcurrentMap<ServiceReference<?>, ServiceRegistrationHolder> proxyMap =
-            new ConcurrentHashMap<ServiceReference<?>, ServiceRegistrationHolder>();
+    private final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
+            new ConcurrentHashMap<ProxyMapKey, ServiceRegistrationHolder>();
 
 
     GuardProxyCatalog(BundleContext bc) throws Exception {
@@ -67,26 +67,39 @@ public class GuardProxyCatalog {
     void close() {
         proxyManagerTracker.close();
         configAdminTracker.close();
+
+        // Remove all proxy registrations
+        for (ServiceRegistrationHolder srh : proxyMap.values()) {
+            srh.registration.unregister();
+        }
     }
 
     boolean isProxy(ServiceReference<?> sr) {
         return sr.getProperty(PROXY_MARKER_KEY) != null;
     }
 
-    void proxy(ServiceReference<?> originalRef) throws Exception {
-        if (proxyMap.containsKey(originalRef)) {
-            return;
-        }
+    boolean isProxyFor(ServiceReference<?> sr, BundleContext clientBC) {
+        return new Long(clientBC.getBundle().getBundleId()).equals(sr.getProperty(PROXY_MARKER_KEY));
+    }
+
+    void proxyIfNotAlreadyProxied(ServiceReference<?> originalRef, BundleContext clientBC) throws Exception {
         if (isProxy(originalRef)) {
+            // It's already a proxy, don't re-proxy
             return;
         }
-        System.out.println("*** About to Proxy: " + originalRef);
 
         // make sure it's on the map before the proxy is registered, as that can trigger
         // another call into this method, and we need to make sure that it doesn't proxy
         // the service again.
+        ProxyMapKey key = new ProxyMapKey(originalRef, clientBC);
         ServiceRegistrationHolder registrationHolder = new ServiceRegistrationHolder();
-        proxyMap.put(originalRef, registrationHolder);
+        ServiceRegistrationHolder previousHolder = proxyMap.putIfAbsent(key, registrationHolder);
+        if (previousHolder != null) {
+            // There is already a proxy for this service for this client bundle.
+            return;
+        }
+
+        System.out.println("*** About to Proxy: " + originalRef + " for " + clientBC.getBundle().getSymbolicName());
 
         ProxyManager pm = proxyManagerTracker.getService();
         if (pm == null) {
@@ -94,7 +107,7 @@ public class GuardProxyCatalog {
             // TODO queue them up and wait...
         }
 
-        Object svc = originalRef.getBundle().getBundleContext().getService(originalRef);
+        Object svc = clientBC.getService(originalRef);
         Set<Class<?>> allClasses = new HashSet<Class<?>>();
         allClasses.addAll(Arrays.asList(svc.getClass().getInterfaces()));
         allClasses.addAll(Arrays.asList(svc.getClass().getClasses()));
@@ -114,7 +127,7 @@ public class GuardProxyCatalog {
         Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
         ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
                 (String[]) originalRef.getProperty(Constants.OBJECTCLASS),
-                proxyService, proxyProperties(originalRef));
+                proxyService, proxyProperties(originalRef, clientBC));
 
         // put the actual service registration in the holder
         registrationHolder.registration = proxyReg;
@@ -122,18 +135,59 @@ public class GuardProxyCatalog {
         // TODO register listener that unregisters the proxy once the original service is gone.
     }
 
-    private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr) throws Exception {
+    private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr, BundleContext clientBC) throws Exception {
         Dictionary<String, Object> p = new Hashtable<String, Object>();
 
         for (String key : sr.getPropertyKeys()) {
             p.put(key, sr.getProperty(key));
         }
-        p.put(PROXY_MARKER_KEY, "proxy");
+        p.put(PROXY_MARKER_KEY, new Long(clientBC.getBundle().getBundleId()));
         return p;
     }
 
     private static class ServiceRegistrationHolder {
         ServiceRegistration<?> registration;
+    }
+
+    /**
+     * Key for the proxy map. Note that each service client bundle gets its own proxy as service factories
+     * can cause each client to get a separate service instance.
+     */
+    private static class ProxyMapKey {
+        private final ServiceReference<?> serviceReference;
+        private final long clientBundleID;
+
+        ProxyMapKey(ServiceReference<?> sr, BundleContext clientBC) {
+            serviceReference = sr;
+            clientBundleID = clientBC.getBundle().getBundleId();
+        }
+
+        @Override
+        public int hashCode() {
+            int result = 1;
+            result = 31 * result + (int) (clientBundleID ^ (clientBundleID >>> 32));
+            result = 31 * result + ((serviceReference == null) ? 0 : serviceReference.hashCode());
+            return result;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj)
+                return true;
+            if (obj == null)
+                return false;
+            if (getClass() != obj.getClass())
+                return false;
+            ProxyMapKey other = (ProxyMapKey) obj;
+            if (clientBundleID != other.clientBundleID)
+                return false;
+            if (serviceReference == null) {
+                if (other.serviceReference != null)
+                    return false;
+            } else if (!serviceReference.equals(other.serviceReference))
+                return false;
+            return true;
+        }
     }
 
     private static class ProxyInvocationListener implements InvocationListener {

@@ -47,19 +47,22 @@ public class GuardingEventHook implements EventListenerHook {
         }
         /* */
 
-        if (!guardProxyCatalog.isProxy(sr)) {
-            for (Iterator<BundleContext> i = listeners.keySet().iterator(); i.hasNext(); ) {
-                BundleContext bc = i.next();
-                if (myBundleContext.equals(bc) || bc.getBundle().getBundleId() == 0L) {
-                    // don't hide anything from this bundle or the system bundle
-                    continue;
-                }
-                i.remove();
+        for (Iterator<BundleContext> i = listeners.keySet().iterator(); i.hasNext(); ) {
+            BundleContext bc = i.next();
+            if (myBundleContext.equals(bc) || bc.getBundle().getBundleId() == 0L) {
+                // don't hide anything from this bundle or the system bundle
+                continue;
             }
 
+            if (guardProxyCatalog.isProxyFor(sr, bc)) {
+                // This is a proxy for bc, so let the bundle see it.
+                continue;
+            }
+
+            i.remove();
             // TODO this can be done in a separate thread...
             try {
-                guardProxyCatalog.proxy(sr);
+                guardProxyCatalog.proxyIfNotAlreadyProxied(sr, bc);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }

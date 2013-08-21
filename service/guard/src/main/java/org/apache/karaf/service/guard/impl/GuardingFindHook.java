@@ -50,12 +50,12 @@ public class GuardingFindHook implements FindHook {
             }
             /* */
 
-            if (!guardProxyCatalog.isProxy(sr)) {
+            if (!guardProxyCatalog.isProxyFor(sr, context)) {
                 i.remove();
 
                 // TODO this can be done in a separate thread...
                 try {
-                    guardProxyCatalog.proxy(sr);
+                    guardProxyCatalog.proxyIfNotAlreadyProxied(sr, context);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
