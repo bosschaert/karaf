@@ -72,9 +72,12 @@
     <reference id="configAdmin" interface="org.osgi.service.cm.ConfigurationAdmin"  />
     
     <!-- For role-based security on the shell commands -->
-    <bean id="commandProxyCatalog" class="org.apache.karaf.shell.security.impl.CommandProxyCatalog">
+    <bean id="commandProxyCatalog" 
+        class="org.apache.karaf.shell.security.impl.CommandProxyCatalog"
+        init-method="init">
         <property name="configAdmin" ref="configAdmin"/>
     </bean>
+    <service ref="commandProxyCatalog" interface="org.osgi.service.cm.ConfigurationListener"/>
 
     <service>
         <interfaces>

@@ -173,11 +173,6 @@ public class ConsoleImpl implements Console
 
     public void run()
     {
-      // System.out.println("@@@ About to obtain security information");
-//      AccessControlContext acc = AccessController.getContext();
-//      Subject sub = Subject.getSubject(acc);
-//      System.out.println("@@@ Subject: " + sub);
-
         /* */
         System.out.println("@@@ Deferred creation of real session");
         if (!(session instanceof InactiveSession)) {
@@ -187,7 +182,6 @@ public class ConsoleImpl implements Console
         // make it active
         MyCommandProcessorImpl myCP = new MyCommandProcessorImpl(bundleContext);
         CommandSession s = myCP.createSession(consoleInput, out, err);
-//            CommandSession s = baseProcessor.createSession(this.consoleInput, this.out, this.err);
 
         Map<String, Object> m = ((InactiveSession) session).getAttributes();
         for (Map.Entry<String, Object> entry : m.entrySet()) {
