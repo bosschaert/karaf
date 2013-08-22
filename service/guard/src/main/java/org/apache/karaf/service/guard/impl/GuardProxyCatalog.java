@@ -37,6 +37,7 @@ import javax.security.auth.Subject;
 import org.apache.aries.proxy.InvocationListener;
 import org.apache.aries.proxy.ProxyManager;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
+import org.apache.karaf.service.guard.tools.ACLConfigurationParser;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
@@ -119,27 +120,42 @@ public class GuardProxyCatalog {
             // TODO queue them up and wait...
         }
 
+        String[] objectClassProperty = (String[]) originalRef.getProperty(Constants.OBJECTCLASS);
         Object svc = clientBC.getService(originalRef);
         Set<Class<?>> allClasses = new HashSet<Class<?>>();
+        for (String cls : objectClassProperty) {
+            try {
+                allClasses.add(clientBC.getBundle().loadClass(cls));
+            } catch (Exception e) {
+                // The client has no visibility of the class, so it's no use for it...
+            }
+        }
         allClasses.addAll(Arrays.asList(svc.getClass().getInterfaces()));
         allClasses.addAll(Arrays.asList(svc.getClass().getClasses()));
         allClasses.addAll(Arrays.asList(svc.getClass().getDeclaredClasses())); // TODO what is this for?
         allClasses.add(svc.getClass()); // TODO is this needed?
 
+        nextClass:
         for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
             Class<?> cls = i.next();
-            int modifiers = cls.getModifiers();
-            if ((modifiers & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
+            if ((cls.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
                 // Do not attempt to proxy private or final classes
                 i.remove();
+            } else {
+                for (Method m : cls.getDeclaredMethods()) {
+                    if ((m.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
+                        // Do not attempt to proxy classes that contain final or private methods
+                        i.remove();
+                        continue nextClass;
+                    }
+                }
             }
         }
 
         InvocationListener il = new ProxyInvocationListener(originalRef);
         Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
         ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
-                (String[]) originalRef.getProperty(Constants.OBJECTCLASS),
-                proxyService, proxyProperties(originalRef, clientBC));
+                objectClassProperty, proxyService, proxyProperties(originalRef, clientBC));
 
         // put the actual service registration in the holder
         registrationHolder.registration = proxyReg;
@@ -216,8 +232,6 @@ public class GuardProxyCatalog {
                 return null;
             }
 
-            Class<?> cls = m.getDeclaringClass();
-
             // TODO optimize!! This can be expensive!
             Configuration[] configs = ca.listConfigurations("(service.guard=*)");
             if (configs == null || configs.length == 0) {
@@ -229,6 +243,19 @@ public class GuardProxyCatalog {
                 if (guardFilter instanceof String) {
                     Filter filter = bundleContext.createFilter((String) guardFilter);
                     if (filter.match(serviceReference)) {
+
+                        List<String> roles = ACLConfigurationParser.getRolesForInvocation(m.getName(), args, config);
+                        if (roles != null) {
+                            for (String role : roles) {
+                                if (currentUserHasRole(role)) {
+                                    return null;
+                                }
+                            }
+                            // The current user does not have the required roles to invoke the service.
+                            throw new SecurityException("Insufficient credentials.");
+                        }
+
+                        /*
                         Object roleStr = config.getProperties().get(m.getName());
                         if (roleStr instanceof String) {
                             for (String role : parseRoles((String) roleStr)) {
@@ -239,54 +266,12 @@ public class GuardProxyCatalog {
                             // The current user does not have the required roles to invoke the service.
                             throw new SecurityException("Insufficient credentials for service invocation.");
                         }
+                        */
                     }
                 }
             }
 
             return null;
-            /*
-            Configuration[] configs = ca.listConfigurations("(" + Constants.SERVICE_PID + "=service.acl." + cls.getName() + ")");
-            if (configs == null || configs.length == 0) {
-                return null;
-            }
-
-            // We should be getting one matching object
-            Configuration config = configs[0];
-            Object roleStr = config.getProperties().get(m.getName());
-            if (!(roleStr instanceof String)) {
-                return null;
-            }
-
-            for (String role : parseRoles((String) roleStr)) {
-                if (currentUserHasRole(role)) {
-                    return null;
-                }
-            }
-
-            // The current user does not have the required roles to invoke the service.
-            throw new SecurityException("Insufficient credentials for service invocation.");
-
-
-            /*
-            for (String cls : objectClasses) {
-                // TODO optimize!! This can be expensive!
-
-                Configuration[] configs = ca.listConfigurations("(" + Constants.SERVICE_PID + "=" + cls + ")");
-                if (configs == null)
-                    return;
-
-
-            }
-            */
-
-            /*
-            System.out.println("*** invoking: " + m + "-" + Arrays.toString(args));
-            // Cannot use the proxy object, because that causes trouble in case reflection is used to invoke this method...
-            if (new Integer(42).equals(args[0])) {
-                throw new SecurityException("Gotcha!");
-            }
-            return null; // return m.invoke(original, args);
-            */
         }
 
 

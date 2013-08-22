@@ -23,6 +23,7 @@ import java.security.AccessControlContext;
 import java.security.AccessController;
 import java.security.Principal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Dictionary;
 import java.util.Enumeration;
@@ -240,8 +241,6 @@ public class KarafMBeanServerGuard implements InvocationHandler {
     }
 
     List<String> getRequiredRoles(ObjectName objectName, String methodName, Object[] params, String[] signature) throws IOException {
-        List<String> roles = new ArrayList<String>();
-
         List<String> allPids = new ArrayList<String>();
         try {
             for (Configuration config : configAdmin.listConfigurations("(service.pid=jmx.acl*)")) {
@@ -254,64 +253,75 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         for (String pid : iterateDownPids(getNameSegments(objectName))) {
             if (allPids.contains(pid)) {
                 Configuration config = configAdmin.getConfiguration(pid);
-                Dictionary<String, Object> properties = trimKeys(config.getProperties());
-
-                /*
-                1. get all direct string matches
-                2. get regexp matches
-                3. get signature matches
-                4. without signature
-                5. method name wildcard
-
-                We return immediately when a definition is found, so if a specific definition is found
-                we do not search for a more generic specification.
-                Regular expressions and exact matches are considered equally specific, so they are combined...
-                 */
-
-                boolean foundExactOrRegExp = false;
-                if (params != null) {
-                    Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
-                    if (exactArgMatchRoles instanceof String) {
-                        roles.addAll(parseRoles((String) exactArgMatchRoles));
-                        foundExactOrRegExp = true;
-                    }
-
-                    foundExactOrRegExp |= getRegExpRoles(properties, methodName, signature, params, roles);
-
-                    if (foundExactOrRegExp) {
-                        // Since we have the actual parameters we can match them and if they do we won't look for any
-                        // more generic rules...
-                        return roles;
-                    }
-                } else {
-                    foundExactOrRegExp = getExactArgOrRegExpRoles(properties, methodName, signature, roles);
-                }
-
-                Object signatureRoles = properties.get(getSignature(methodName, signature));
-                if (signatureRoles instanceof String) {
-                    roles.addAll(parseRoles((String) signatureRoles));
-                    return roles;
-                }
-
-                if (foundExactOrRegExp) {
-                    // We can get here if params == null and there were exact and/or regexp rules but no signature rules
-                    return roles;
-                }
-
-                Object methodRoles = properties.get(methodName);
-                if (methodRoles instanceof String) {
-                    roles.addAll(parseRoles((String) methodRoles));
-                    return roles;
-                }
-
-                if (getMethodNameWildcardRoles(properties, methodName, roles))
+                List<String> roles = getRolesForInvocation(methodName, params, signature, config);
+                if (roles != null)
                     return roles;
             }
         }
-        return roles;
+        return Collections.emptyList();
     }
 
-    private Dictionary<String, Object> trimKeys(Dictionary<String, Object> properties) {
+    // TODO move to ACLConfigurationParser or somewhere else? Can we share this code somehow?
+    private static List<String> getRolesForInvocation(String methodName, Object[] params, String[] signature,
+            Configuration config) {
+        List<String> roles = new ArrayList<String>();
+        Dictionary<String, Object> properties = trimKeys(config.getProperties());
+
+        /*
+        1. get all direct string matches
+        2. get regexp matches
+        3. get signature matches
+        4. without signature
+        5. method name wildcard
+
+        We return immediately when a definition is found, so if a specific definition is found
+        we do not search for a more generic specification.
+        Regular expressions and exact matches are considered equally specific, so they are combined...
+         */
+
+        boolean foundExactOrRegExp = false;
+        if (params != null) {
+            Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
+            if (exactArgMatchRoles instanceof String) {
+                roles.addAll(parseRoles((String) exactArgMatchRoles));
+                foundExactOrRegExp = true;
+            }
+
+            foundExactOrRegExp |= getRegExpRoles(properties, methodName, signature, params, roles);
+
+            if (foundExactOrRegExp) {
+                // Since we have the actual parameters we can match them and if they do we won't look for any
+                // more generic rules...
+                return roles;
+            }
+        } else {
+            foundExactOrRegExp = getExactArgOrRegExpRoles(properties, methodName, signature, roles);
+        }
+
+        Object signatureRoles = properties.get(getSignature(methodName, signature));
+        if (signatureRoles instanceof String) {
+            roles.addAll(parseRoles((String) signatureRoles));
+            return roles;
+        }
+
+        if (foundExactOrRegExp) {
+            // We can get here if params == null and there were exact and/or regexp rules but no signature rules
+            return roles;
+        }
+
+        Object methodRoles = properties.get(methodName);
+        if (methodRoles instanceof String) {
+            roles.addAll(parseRoles((String) methodRoles));
+            return roles;
+        }
+
+        if (getMethodNameWildcardRoles(properties, methodName, roles))
+            return roles;
+
+        return null;
+    }
+
+    private static Dictionary<String, Object> trimKeys(Dictionary<String, Object> properties) {
         Dictionary<String, Object> d = new Hashtable<String, Object>();
         for (Enumeration<String> e = properties.keys(); e.hasMoreElements(); ) {
             String key = e.nextElement();
@@ -322,7 +332,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return d;
     }
 
-    private String removeSpaces(String key) {
+    private static String removeSpaces(String key) {
         StringBuilder sb = new StringBuilder();
         char quoteChar = 0;
         for (int i = 0; i < key.length(); i++) {
@@ -354,7 +364,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return sb.toString();
     }
 
-    private List<String> parseRoles(String roleStr) {
+    private static List<String> parseRoles(String roleStr) {
         int hashIdx = roleStr.indexOf('#');
         if (hashIdx >= 0) {
             // You can put a comment at the end
@@ -370,7 +380,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return roles;
     }
 
-    private Object getExactArgSignature(String methodName, String[] signature, Object[] params) {
+    private static Object getExactArgSignature(String methodName, String[] signature, Object[] params) {
         StringBuilder sb = new StringBuilder(getSignature(methodName, signature));
         sb.append('[');
         boolean first = true;
@@ -387,7 +397,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return sb.toString();
     }
 
-    private String getSignature(String methodName, String[] signature) {
+    private static String getSignature(String methodName, String[] signature) {
         StringBuilder sb = new StringBuilder(methodName);
         sb.append('(');
         boolean first = true;
@@ -403,7 +413,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return sb.toString();
     }
 
-    private boolean getRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, Object[] params, List<String> roles) {
+    private static boolean getRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, Object[] params, List<String> roles) {
         boolean matchFound = false;
         String methodSig = getSignature(methodName, signature);
         String prefix = methodSig + "[/";
@@ -423,7 +433,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return matchFound;
     }
 
-    private boolean getExactArgOrRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, List<String> roles) {
+    private static boolean getExactArgOrRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, List<String> roles) {
         boolean matchFound = false;
         String methodSig = getSignature(methodName, signature);
         String prefix = methodSig + "[";
@@ -440,7 +450,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return matchFound;
     }
 
-    private boolean getMethodNameWildcardRoles(Dictionary<String, Object> properties, String methodName, List<String> roles) {
+    private static boolean getMethodNameWildcardRoles(Dictionary<String, Object> properties, String methodName, List<String> roles) {
         SortedMap<String, String> wildcardRules = new TreeMap<String, String>(new Comparator<String>() {
             public int compare(String s1, String s2) {
                 // Returns longer entries before shorter ones...
@@ -465,7 +475,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         }
     }
 
-    private boolean allParamsMatch(List<String> regexpArgs, Object[] params) {
+    private static boolean allParamsMatch(List<String> regexpArgs, Object[] params) {
         if (regexpArgs.size() != params.length)
             return false;
 
@@ -477,7 +487,7 @@ public class KarafMBeanServerGuard implements InvocationHandler {
         return true;
     }
 
-    private List<String> getRegExpDecl(String key) {
+    private static List<String> getRegExpDecl(String key) {
         List<String> l = new ArrayList<String>();
 
         boolean inRegExp = false;

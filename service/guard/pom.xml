@@ -83,7 +83,7 @@
                 <configuration>
                     <instructions>
                         <Bundle-Activator>org.apache.karaf.service.guard.impl.Activator</Bundle-Activator>
-                        <Export-Package>!org.apache.karaf.service.guard.impl</Export-Package>
+                        <Export-Package>org.apache.karaf.service.guard.tools</Export-Package>
                         <Private-Package>org.apache.karaf.service.guard.impl</Private-Package>
                     </instructions>
                 </configuration>
