@@ -18,6 +18,7 @@ package org.apache.karaf.service.guard.impl;
 
 import org.osgi.framework.BundleActivator;
 import org.osgi.framework.BundleContext;
+import org.osgi.framework.Filter;
 import org.osgi.framework.hooks.service.EventListenerHook;
 import org.osgi.framework.hooks.service.FindHook;
 
@@ -27,10 +28,18 @@ public class Activator implements BundleActivator {
     @Override
     public void start(BundleContext context) throws Exception {
         System.out.println("*** Activating Service Guard");
+        String f = System.getProperty("karaf.secured.services");
+        Filter securedServicesFilter;
+        if (f == null) {
+            securedServicesFilter = null;
+        } else {
+            securedServicesFilter = context.createFilter(f);
+        }
+
         guardProxyCatalog = new GuardProxyCatalog(context);
 
-        context.registerService(EventListenerHook.class, new GuardingEventHook(context, guardProxyCatalog), null);
-        context.registerService(FindHook.class, new GuardingFindHook(context, guardProxyCatalog), null);
+        context.registerService(EventListenerHook.class, new GuardingEventHook(context, guardProxyCatalog, securedServicesFilter), null);
+        context.registerService(FindHook.class, new GuardingFindHook(context, guardProxyCatalog, securedServicesFilter), null);
     }
 
     @Override

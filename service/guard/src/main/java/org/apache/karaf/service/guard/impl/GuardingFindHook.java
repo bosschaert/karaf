@@ -20,22 +20,28 @@ import java.util.Collection;
 import java.util.Iterator;
 
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.Constants;
+import org.osgi.framework.Filter;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.hooks.service.FindHook;
 
 public class GuardingFindHook implements FindHook {
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
+    private final Filter servicesFilter;
 
-    public GuardingFindHook(BundleContext myBC, GuardProxyCatalog gpc) {
+    public GuardingFindHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) {
         myBundleContext = myBC;
         guardProxyCatalog = gpc;
+        servicesFilter = securedServicesFilter;
     }
 
     @Override
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
+        if (servicesFilter == null) {
+            return;
+        }
+
         if (myBundleContext.equals(context) || context.getBundle().getBundleId() == 0) {
             // don't hide anything from this bundle or the system bundle
             return;
@@ -43,12 +49,10 @@ public class GuardingFindHook implements FindHook {
 
         for (Iterator<ServiceReference<?>> i = references.iterator(); i.hasNext(); ) {
             ServiceReference<?> sr = i.next();
-            /* */
-            for (String oc : (String[]) sr.getProperty(Constants.OBJECTCLASS)) {
-                if (!oc.startsWith("org.coderthoughts"))
-                    return;
+
+            if (!servicesFilter.match(sr)) {
+                continue;
             }
-            /* */
 
             if (!guardProxyCatalog.isProxyFor(sr, context)) {
                 i.remove();

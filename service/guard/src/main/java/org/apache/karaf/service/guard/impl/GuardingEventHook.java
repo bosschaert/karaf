@@ -21,7 +21,8 @@ import java.util.Iterator;
 import java.util.Map;
 
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.Constants;
+import org.osgi.framework.Filter;
+import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceEvent;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.hooks.service.EventListenerHook;
@@ -30,22 +31,24 @@ import org.osgi.framework.hooks.service.ListenerHook.ListenerInfo;
 public class GuardingEventHook implements EventListenerHook {
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
+    private final Filter servicesFilter;
 
-    public GuardingEventHook(BundleContext myBC, GuardProxyCatalog gpc) {
+    public GuardingEventHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) throws InvalidSyntaxException {
         myBundleContext = myBC;
         guardProxyCatalog = gpc;
+        servicesFilter = securedServicesFilter;
     }
 
     @Override
     public void event(ServiceEvent event, Map<BundleContext, Collection<ListenerInfo>> listeners) {
-        ServiceReference<?> sr = event.getServiceReference();
-
-        /* */
-        for (String oc : (String[]) sr.getProperty(Constants.OBJECTCLASS)) {
-            if (!oc.startsWith("org.coderthoughts"))
-                return;
+        if (servicesFilter == null) {
+            return;
         }
-        /* */
+
+        ServiceReference<?> sr = event.getServiceReference();
+        if (!servicesFilter.match(sr)) {
+            return;
+        }
 
         for (Iterator<BundleContext> i = listeners.keySet().iterator(); i.hasNext(); ) {
             BundleContext bc = i.next();
