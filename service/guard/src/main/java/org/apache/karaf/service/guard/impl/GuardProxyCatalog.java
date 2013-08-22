@@ -18,23 +18,32 @@ package org.apache.karaf.service.guard.impl;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.security.AccessControlContext;
+import java.security.AccessController;
+import java.security.Principal;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Dictionary;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import javax.security.auth.Subject;
+
 import org.apache.aries.proxy.InvocationListener;
 import org.apache.aries.proxy.ProxyManager;
+import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.ServiceRegistration;
+import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.util.tracker.ServiceTracker;
 
@@ -123,11 +132,11 @@ public class GuardProxyCatalog {
             }
         }
 
-        InvocationListener il = new ProxyInvocationListener(svc);
+        String[] objectClassProp = (String[]) originalRef.getProperty(Constants.OBJECTCLASS);
+        InvocationListener il = new ProxyInvocationListener(configAdminTracker, objectClassProp);
         Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
         ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
-                (String[]) originalRef.getProperty(Constants.OBJECTCLASS),
-                proxyService, proxyProperties(originalRef, clientBC));
+                objectClassProp, proxyService, proxyProperties(originalRef, clientBC));
 
         // put the actual service registration in the holder
         registrationHolder.registration = proxyReg;
@@ -191,30 +200,121 @@ public class GuardProxyCatalog {
     }
 
     private static class ProxyInvocationListener implements InvocationListener {
-        private final Object original;
+        private final String[] objectClasses;
+        private final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> caTracker;
 
-        public ProxyInvocationListener(Object svc) {
-            original = svc;
+        public ProxyInvocationListener(ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> caTracker, String[] objectClassProp) {
+            this.caTracker = caTracker;
+            this.objectClasses = objectClassProp;
         }
 
         @Override
         public Object preInvoke(Object proxy, Method m, Object[] args) throws Throwable {
+            ConfigurationAdmin ca = caTracker.getService();
+            if (ca == null) {
+                return null;
+            }
+
+            Class<?> cls = m.getDeclaringClass();
+
+            // TODO optimize!! This can be expensive!
+            Configuration[] configs = ca.listConfigurations("(" + Constants.SERVICE_PID + "=service.acl." + cls.getName() + ")");
+            if (configs == null || configs.length == 0) {
+                return null;
+            }
+
+            // We should be getting one matching object
+            Configuration config = configs[0];
+            Object roleStr = config.getProperties().get(m.getName());
+            if (!(roleStr instanceof String)) {
+                return null;
+            }
+
+            for (String role : parseRoles((String) roleStr)) {
+                if (currentUserHasRole(role)) {
+                    return null;
+                }
+            }
+
+            // The current user does not have the required roles to invoke the service.
+            throw new SecurityException("Insufficient credentials for service invocation.");
+
+
+            /*
+            for (String cls : objectClasses) {
+                // TODO optimize!! This can be expensive!
+
+                Configuration[] configs = ca.listConfigurations("(" + Constants.SERVICE_PID + "=" + cls + ")");
+                if (configs == null)
+                    return;
+
+
+            }
+            */
+
+            /*
             System.out.println("*** invoking: " + m + "-" + Arrays.toString(args));
             // Cannot use the proxy object, because that causes trouble in case reflection is used to invoke this method...
             if (new Integer(42).equals(args[0])) {
                 throw new SecurityException("Gotcha!");
             }
             return null; // return m.invoke(original, args);
+            */
         }
+
 
         @Override
         public void postInvokeExceptionalReturn(Object token, Object proxy, Method m, Throwable exception) throws Throwable {
-            System.out.println("*** done invoking: " + m + "- exception: " + exception);
         }
 
         @Override
         public void postInvoke(Object token, Object proxy, Method m, Object returnValue) throws Throwable {
-            System.out.println("*** done invoking: " + m + "- rc: " + returnValue);
         }
+    }
+
+    static boolean currentUserHasRole(String reqRole) {
+        String clazz;
+        String role;
+        int idx = reqRole.indexOf(':');
+        if (idx > 0) {
+            clazz = reqRole.substring(0, idx);
+            role = reqRole.substring(idx + 1);
+        } else {
+            clazz = RolePrincipal.class.getName();
+            role = reqRole;
+        }
+
+        AccessControlContext acc = AccessController.getContext();
+        if (acc == null) {
+            return false;
+        }
+        Subject subject = Subject.getSubject(acc);
+
+        if (subject == null) {
+            return false;
+        }
+
+        for (Principal p : subject.getPrincipals()) {
+            if (clazz.equals(p.getClass().getName()) && role.equals(p.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static List<String> parseRoles(String roleStr) {
+        int hashIdx = roleStr.indexOf('#');
+        if (hashIdx >= 0) {
+            // You can put a comment at the end
+            roleStr = roleStr.substring(0, hashIdx);
+        }
+
+        List<String> roles = new ArrayList<String>();
+        for (String role : roleStr.split("[,]")) {
+            String trimmed = role.trim();
+            if (trimmed.length() > 0)
+                roles.add(trimmed);
+        }
+        return roles;
     }
 }
