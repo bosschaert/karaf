@@ -50,6 +50,7 @@ import org.osgi.util.tracker.ServiceTracker;
 public class GuardProxyCatalog {
     private static final String PROXY_MARKER_KEY = "." + GuardProxyCatalog.class.getName();
 
+    private final BundleContext bundleContext;
     private final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
     private final ServiceTracker<ProxyManager, ProxyManager> proxyManagerTracker;
     private final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
@@ -57,6 +58,8 @@ public class GuardProxyCatalog {
 
 
     GuardProxyCatalog(BundleContext bc) throws Exception {
+        bundleContext = bc;
+
         Filter caFilter = getNonProxyFilter(bc, ConfigurationAdmin.class);
         configAdminTracker = new ServiceTracker<ConfigurationAdmin, ConfigurationAdmin>(bc, caFilter, null);
         configAdminTracker.open();
@@ -132,11 +135,11 @@ public class GuardProxyCatalog {
             }
         }
 
-        String[] objectClassProp = (String[]) originalRef.getProperty(Constants.OBJECTCLASS);
-        InvocationListener il = new ProxyInvocationListener(configAdminTracker, objectClassProp);
+        InvocationListener il = new ProxyInvocationListener(originalRef);
         Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
         ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
-                objectClassProp, proxyService, proxyProperties(originalRef, clientBC));
+                (String[]) originalRef.getProperty(Constants.OBJECTCLASS),
+                proxyService, proxyProperties(originalRef, clientBC));
 
         // put the actual service registration in the holder
         registrationHolder.registration = proxyReg;
@@ -199,18 +202,16 @@ public class GuardProxyCatalog {
         }
     }
 
-    private static class ProxyInvocationListener implements InvocationListener {
-        private final String[] objectClasses;
-        private final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> caTracker;
+    private class ProxyInvocationListener implements InvocationListener {
+        private final ServiceReference<?> serviceReference;
 
-        public ProxyInvocationListener(ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> caTracker, String[] objectClassProp) {
-            this.caTracker = caTracker;
-            this.objectClasses = objectClassProp;
+        public ProxyInvocationListener(ServiceReference<?> sr) {
+            this.serviceReference = sr;
         }
 
         @Override
         public Object preInvoke(Object proxy, Method m, Object[] args) throws Throwable {
-            ConfigurationAdmin ca = caTracker.getService();
+            ConfigurationAdmin ca = configAdminTracker.getService();
             if (ca == null) {
                 return null;
             }
@@ -218,6 +219,32 @@ public class GuardProxyCatalog {
             Class<?> cls = m.getDeclaringClass();
 
             // TODO optimize!! This can be expensive!
+            Configuration[] configs = ca.listConfigurations("(service.guard=*)");
+            if (configs == null || configs.length == 0) {
+                return null;
+            }
+
+            for (Configuration config : configs) {
+                Object guardFilter = config.getProperties().get("service.guard");
+                if (guardFilter instanceof String) {
+                    Filter filter = bundleContext.createFilter((String) guardFilter);
+                    if (filter.match(serviceReference)) {
+                        Object roleStr = config.getProperties().get(m.getName());
+                        if (roleStr instanceof String) {
+                            for (String role : parseRoles((String) roleStr)) {
+                                if (currentUserHasRole(role)) {
+                                    return null;
+                                }
+                            }
+                            // The current user does not have the required roles to invoke the service.
+                            throw new SecurityException("Insufficient credentials for service invocation.");
+                        }
+                    }
+                }
+            }
+
+            return null;
+            /*
             Configuration[] configs = ca.listConfigurations("(" + Constants.SERVICE_PID + "=service.acl." + cls.getName() + ")");
             if (configs == null || configs.length == 0) {
                 return null;
