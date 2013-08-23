@@ -19,7 +19,9 @@ package org.apache.karaf.service.guard.impl;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Pattern;
 
 import org.osgi.framework.BundleContext;
@@ -36,7 +38,7 @@ public class GuardingFindHook implements FindHook {
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
     private final Filter servicesFilter;
-    private final Map<String, ServiceTracker<?,?>> trackers = new HashMap<String, ServiceTracker<?,?>>();
+    private final Map<String, MultiplexingServiceTracker> trackers = new HashMap<String, MultiplexingServiceTracker>();
 
     public GuardingFindHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) {
         myBundleContext = myBC;
@@ -94,35 +96,27 @@ public class GuardingFindHook implements FindHook {
         // TODO this can be done in a separate thread
         String newFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("(service.id=*)"); // Replace with some dummy condition that will always succeed
 
-        ServiceTracker<?, ?> st = null;
+        boolean newTracker;
+        MultiplexingServiceTracker mst;
         synchronized (trackers) {
-            if (trackers.containsKey(newFilter)) {
-                // there is already such a tracker
-                return;
+            mst = trackers.get(newFilter);
+            if (mst == null) {
+                try {
+                    mst = new MultiplexingServiceTracker(myBundleContext, context, newFilter);
+                    trackers.put(newFilter, mst);
+                    newTracker = true;
+                } catch (InvalidSyntaxException e) {
+                    throw new RuntimeException(e);
+                }
+            } else {
+                newTracker = false;
             }
-
-            try {
-                // TODO make this a special tracker that can track for multiple clients!!!!!!!
-                st = new ServiceTracker<Object, Object>(context, context.createFilter(newFilter), null) {
-                    @Override
-                    public Object addingService(ServiceReference<Object> reference) {
-                        // So there is a new service that matches the filter.
-                        // We now need to make sure that there is a matching proxy for it too
-                        // to that the client can see it...
-                        proxyForClient(reference, context);
-                        return super.addingService(reference);
-                    }
-                };
-            } catch (InvalidSyntaxException e) {
-                e.printStackTrace();
-                return;
-            }
-            trackers.put(newFilter, st);
         }
 
-        if (st != null) {
-            System.out.println("Starting new tracker for: " + newFilter);
-            st.open();
+        if (newTracker) {
+            mst.open(true);
+        } else {
+            mst.addBundleContext(context);
         }
     }
 
@@ -136,6 +130,39 @@ public class GuardingFindHook implements FindHook {
             guardProxyCatalog.proxyIfNotAlreadyProxied(reference, context);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private class MultiplexingServiceTracker extends ServiceTracker<Object, Object> {
+        private List<BundleContext> bundleContexts = new CopyOnWriteArrayList<BundleContext>();
+
+        MultiplexingServiceTracker(BundleContext context, BundleContext clientContext, String filter) throws InvalidSyntaxException {
+            super(context, context.createFilter(filter), null);
+            addBundleContext(clientContext);
+        }
+
+        void addBundleContext(BundleContext bc) {
+            if (bc.equals(myBundleContext)) {
+                // don't proxy anything for myself
+                return;
+            }
+            bundleContexts.add(bc);
+        }
+
+        void removeBundleContext(BundleContext bc) {
+            bundleContexts.remove(bc);
+        }
+
+        @Override
+        public Object addingService(ServiceReference<Object> reference) {
+            // So there is a new service that matches the filter.
+            // We now need to make sure that there is are matching proxies for it too
+            // to that all the interested clients can see it...
+            int i=0;
+            for (BundleContext bc : bundleContexts) {
+                proxyForClient(reference, bc);
+            }
+            return super.addingService(reference);
         }
     }
 }
