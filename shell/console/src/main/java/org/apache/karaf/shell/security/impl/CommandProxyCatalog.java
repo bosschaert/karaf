@@ -39,11 +39,11 @@ import org.osgi.service.cm.ConfigurationEvent;
 import org.osgi.service.cm.ConfigurationListener;
 
 public class CommandProxyCatalog implements ConfigurationListener {
-    public static final String PROXY_COMMAND_ROLES_PROPERTY = "org.apache.karaf.command.roles";
+    // public static final String PROXY_COMMAND_ROLES_PROPERTY = "org.apache.karaf.command.roles";
     private static final String PROXY_COMMAND_ACL_PID_PREFIX = "org.apache.karaf.command.acl.";
 
-    private final ConcurrentMap<ServiceReference<?>, ServiceRegistrationHolder> proxyMap =
-            new ConcurrentHashMap<ServiceReference<?>, ServiceRegistrationHolder>();
+//    private final ConcurrentMap<ServiceReference<?>, ServiceRegistrationHolder> proxyMap =
+//            new ConcurrentHashMap<ServiceReference<?>, ServiceRegistrationHolder>();
     private ConfigurationAdmin configAdmin;
 
     public void setConfigAdmin(ConfigurationAdmin configAdmin) {
@@ -68,7 +68,7 @@ public class CommandProxyCatalog implements ConfigurationListener {
             return;
         }
 
-        String scopeName = config.getPid().substring(PROXY_COMMAND_ROLES_PROPERTY.length() - 1);
+        String scopeName = config.getPid().substring(PROXY_COMMAND_ACL_PID_PREFIX.length());
         if (scopeName.indexOf('.') >= 0) {
             // Scopes don't contains dots, not a command scope
             return;
@@ -131,6 +131,7 @@ public class CommandProxyCatalog implements ConfigurationListener {
         // TODO update generated configuration
     }
 
+    /*
     boolean isProxy(ServiceReference<?> sr) {
         return sr.getProperty(PROXY_COMMAND_ROLES_PROPERTY) != null;
     }
@@ -144,7 +145,6 @@ public class CommandProxyCatalog implements ConfigurationListener {
         }
 
         Dictionary<String, Object> props = proxyProperties(originalRef);
-        // /* */ System.out.println("@@@ Proxying: " + props);
         BundleContext context = originalRef.getBundle().getBundleContext();
 
         // make sure it's on the map before the proxy is registered, as that can trigger
@@ -217,4 +217,5 @@ public class CommandProxyCatalog implements ConfigurationListener {
     private static class ServiceRegistrationHolder {
         ServiceRegistration<?> registration;
     }
+    */
 }

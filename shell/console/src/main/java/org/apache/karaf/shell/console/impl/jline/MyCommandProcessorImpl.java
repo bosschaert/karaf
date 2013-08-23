@@ -17,7 +17,6 @@ import org.apache.felix.service.command.Converter;
 import org.apache.felix.service.command.Function;
 import org.apache.felix.service.threadio.ThreadIO;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
-import org.apache.karaf.shell.security.impl.CommandProxyCatalog;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
@@ -55,7 +54,7 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         sb.append("(|");
         for (RolePrincipal rp : rolePrincipals) {
             sb.append('(');
-            sb.append(CommandProxyCatalog.PROXY_COMMAND_ROLES_PROPERTY);
+            sb.append("org.apache.karaf.service.guard.roles");
             sb.append('=');
             sb.append(rp.getName());
             sb.append(')');

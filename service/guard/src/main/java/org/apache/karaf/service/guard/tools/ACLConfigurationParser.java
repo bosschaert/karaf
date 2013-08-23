@@ -137,7 +137,7 @@ public class ACLConfigurationParser {
         return sb.toString();
     }
 
-    private static List<String> parseRoles(String roleStr) {
+    public static List<String> parseRoles(String roleStr) {
         int hashIdx = roleStr.indexOf('#');
         if (hashIdx >= 0) {
             // You can put a comment at the end

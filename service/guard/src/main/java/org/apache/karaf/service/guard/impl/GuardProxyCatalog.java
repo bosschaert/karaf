@@ -24,6 +24,7 @@ import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Dictionary;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
 
 import javax.security.auth.Subject;
 
@@ -49,6 +51,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.util.tracker.ServiceTracker;
 
 public class GuardProxyCatalog {
+    public static final String SERVICE_GUARD_ROLES_PROPERTY = "org.apache.karaf.service.guard.roles";
     private static final String PROXY_MARKER_KEY = "." + GuardProxyCatalog.class.getName();
 
     private final BundleContext bundleContext;
@@ -170,6 +173,8 @@ public class GuardProxyCatalog {
             p.put(key, sr.getProperty(key));
         }
         p.put(PROXY_MARKER_KEY, new Long(clientBC.getBundle().getBundleId()));
+        p.put(SERVICE_GUARD_ROLES_PROPERTY, getServiceInvocationRoles(sr));
+        System.out.println("### Proxy properties: " + p);
         return p;
     }
 
@@ -216,6 +221,54 @@ public class GuardProxyCatalog {
                 return false;
             return true;
         }
+    }
+
+    // Returns what roles can possibly ever invoke this service. Note that not every invocation may be successful
+    // as there can be different roles for different methos and also roles based on arguments passed in.
+    private List<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
+        // TODO very similar to what happens in the ProxyInvocationListener
+        ConfigurationAdmin ca = configAdminTracker.getService();
+        if (ca == null) {
+            return null;
+        }
+
+        // TODO optimize!! This can be expensive!
+        Configuration[] configs = ca.listConfigurations("(service.guard=*)");
+        if (configs == null || configs.length == 0) {
+            return null;
+        }
+
+        List<String> allRoles = new ArrayList<String>();
+        for (Configuration config : configs) {
+            Object guardFilter = config.getProperties().get("service.guard");
+            if (guardFilter instanceof String) {
+                Filter filter = bundleContext.createFilter((String) guardFilter);
+                if (filter.match(serviceReference)) {
+                    for (Enumeration<String> e = config.getProperties().keys(); e.hasMoreElements(); ) {
+                        String key = e.nextElement();
+                        String bareKey = key;
+                        int idx = bareKey.indexOf('[');
+                        if (idx >= 0) {
+                            bareKey = bareKey.substring(0, idx);
+                        }
+                        if (!isValidMethodName(bareKey)) {
+                            continue;
+                        }
+                        Object value = config.getProperties().get(key);
+                        if (value instanceof String) {
+                            allRoles.addAll(ACLConfigurationParser.parseRoles((String) value));
+                        }
+                    }
+                }
+            }
+        }
+        return allRoles;
+    }
+
+    private static final Pattern JAVA_CLASS_NAME_PART_PATTERN =
+            Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
+    private boolean isValidMethodName(String name) {
+        return JAVA_CLASS_NAME_PART_PATTERN.matcher(name).matches();
     }
 
     private class ProxyInvocationListener implements InvocationListener {

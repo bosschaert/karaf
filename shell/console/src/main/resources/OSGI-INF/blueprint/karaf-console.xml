@@ -79,6 +79,7 @@
     </bean>
     <service ref="commandProxyCatalog" interface="org.osgi.service.cm.ConfigurationListener"/>
 
+<!-- 
     <service>
         <interfaces>
             <value>org.osgi.framework.hooks.service.EventListenerHook</value>
@@ -96,4 +97,5 @@
             <property name="commandProxyCatalog" ref="commandProxyCatalog"/>
         </bean>
     </service>
+-->
 </blueprint>
