@@ -17,22 +17,14 @@
 package org.apache.karaf.shell.security.impl;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Dictionary;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Hashtable;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import org.apache.felix.service.command.CommandProcessor;
-import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
-import org.osgi.framework.ServiceReference;
-import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.cm.ConfigurationEvent;
@@ -99,7 +91,12 @@ public class CommandProxyCatalog implements ConfigurationListener {
             } else {
                 map = configMaps.get(pid);
             }
-            map.put("execute" + arguments, config.getProperties().get(key));
+
+            // Put rules on the map twice, once for commands that 'execute' (implement Function) and
+            // once for commands that are invoked directly.
+            Object roleString = config.getProperties().get(key);
+            map.put("execute" + arguments, roleString);
+            map.put(key, roleString);
         }
 
         // Update config admin with the generated configuration

@@ -115,7 +115,7 @@ public class GuardProxyCatalog {
             return;
         }
 
-        System.out.println("*** About to Proxy: " + originalRef + " for " + clientBC.getBundle().getSymbolicName());
+        // System.out.println("*** About to Proxy: " + originalRef + " for " + clientBC.getBundle().getSymbolicName());
 
         ProxyManager pm = proxyManagerTracker.getService();
         if (pm == null) {
@@ -174,7 +174,7 @@ public class GuardProxyCatalog {
         }
         p.put(PROXY_MARKER_KEY, new Long(clientBC.getBundle().getBundleId()));
         p.put(SERVICE_GUARD_ROLES_PROPERTY, getServiceInvocationRoles(sr));
-        System.out.println("### Proxy properties: " + p);
+        // System.out.println("### Proxy properties: " + p);
         return p;
     }
 
@@ -296,7 +296,6 @@ public class GuardProxyCatalog {
                 if (guardFilter instanceof String) {
                     Filter filter = bundleContext.createFilter((String) guardFilter);
                     if (filter.match(serviceReference)) {
-
                         List<String> roles = ACLConfigurationParser.getRolesForInvocation(m.getName(), args, config);
                         if (roles != null) {
                             for (String role : roles) {
