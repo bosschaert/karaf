@@ -48,6 +48,12 @@ public class GuardingFindHook implements FindHook {
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
 
+        /*
+        if (filter.contains("foo")) {
+            System.out.println("FINDHOOK: " + filter);
+        }
+        */
+
         if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
             // TODO should we only do this when nothing was returned? Probably better to do it always?
             // Someone is looking for a service based on roles, trigger a lookup of the service

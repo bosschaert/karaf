@@ -62,6 +62,11 @@ public class GuardingEventHook implements EventListenerHook {
                 continue;
             }
 
+            /*
+            if ("foo".equals(sr.getProperty("osgi.command.scope"))) {
+                System.out.println("EVENTHOOK: foo " + bc.getBundle().getSymbolicName());
+            }
+            */
             // System.out.println("Looking for a proxy for " + bc.getBundle().getBundleId());
             // System.out.println("Removing service for: " + sr.getProperty("." + GuardProxyCatalog.class.getName()));
             i.remove();
