@@ -62,6 +62,8 @@ public class GuardingEventHook implements EventListenerHook {
                 continue;
             }
 
+            // System.out.println("Looking for a proxy for " + bc.getBundle().getBundleId());
+            // System.out.println("Removing service for: " + sr.getProperty("." + GuardProxyCatalog.class.getName()));
             i.remove();
             // TODO this can be done in a separate thread...
             try {

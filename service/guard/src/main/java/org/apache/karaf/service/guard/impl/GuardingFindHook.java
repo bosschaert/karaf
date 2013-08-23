@@ -17,7 +17,9 @@
 package org.apache.karaf.service.guard.impl;
 
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 import org.osgi.framework.BundleContext;
@@ -25,6 +27,7 @@ import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.hooks.service.FindHook;
+import org.osgi.util.tracker.ServiceTracker;
 
 public class GuardingFindHook implements FindHook {
     private static final Pattern GUARD_ROLES_CONDITION =
@@ -33,6 +36,7 @@ public class GuardingFindHook implements FindHook {
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
     private final Filter servicesFilter;
+    private final Map<String, ServiceTracker<?,?>> trackers = new HashMap<String, ServiceTracker<?,?>>();
 
     public GuardingFindHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) {
         myBundleContext = myBC;
@@ -43,6 +47,7 @@ public class GuardingFindHook implements FindHook {
     @Override
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
+
         if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
             // TODO should we only do this when nothing was returned? Probably better to do it always?
             // Someone is looking for a service based on roles, trigger a lookup of the service
@@ -79,15 +84,52 @@ public class GuardingFindHook implements FindHook {
         }
     }
 
-    private void triggerProxyCreation(BundleContext context, String filter) {
+    private void triggerProxyCreation(final BundleContext context, final String filter) {
         // TODO this can be done in a separate thread
-
         String newFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("(service.id=*)"); // Replace with some dummy condition that will always succeed
+
+        ServiceTracker<?, ?> st = null;
+        synchronized (trackers) {
+            if (trackers.containsKey(newFilter)) {
+                // there is already such a tracker
+                return;
+            }
+
+            try {
+                // TODO make this a special tracker that can track for multiple clients!!!!!!!
+                st = new ServiceTracker<Object, Object>(context, context.createFilter(newFilter), null) {
+                    @Override
+                    public Object addingService(ServiceReference<Object> reference) {
+                        // So there is a new service that matches the filter.
+                        // We now need to make sure that there is a matching proxy for it too
+                        // to that the client can see it...
+                        proxyForClient(reference, context);
+                        return super.addingService(reference);
+                    }
+                };
+            } catch (InvalidSyntaxException e) {
+                e.printStackTrace();
+                return;
+            }
+            trackers.put(newFilter, st);
+        }
+
+        if (st != null) {
+            System.out.println("Starting new tracker for: " + newFilter);
+            st.open();
+        }
+    }
+
+    protected void proxyForClient(ServiceReference<?> reference, BundleContext context) {
+        if (guardProxyCatalog.isProxy(reference)) {
+            // It's already a proxy, we don't re-proxy
+            return;
+        }
+
         try {
-            context.getServiceReferences((String) null, newFilter);
-        } catch (InvalidSyntaxException e) {
-            // Should log this...
-            e.printStackTrace();
+            guardProxyCatalog.proxyIfNotAlreadyProxied(reference, context);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 }
