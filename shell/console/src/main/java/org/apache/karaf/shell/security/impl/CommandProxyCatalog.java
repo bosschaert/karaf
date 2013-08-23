@@ -121,7 +121,7 @@ public class CommandProxyCatalog implements ConfigurationListener {
         }
         StringBuilder sb = new StringBuilder();
         sb.append("[/.*/,"); // Add an argument since the Function execute method has the arguments as second arg
-        sb.append(commandACLArgs.substring(2));
+        sb.append(commandACLArgs.substring(1));
         return sb.toString();
     }
 
