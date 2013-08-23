@@ -39,11 +39,8 @@ import org.osgi.service.cm.ConfigurationEvent;
 import org.osgi.service.cm.ConfigurationListener;
 
 public class CommandProxyCatalog implements ConfigurationListener {
-    // public static final String PROXY_COMMAND_ROLES_PROPERTY = "org.apache.karaf.command.roles";
     private static final String PROXY_COMMAND_ACL_PID_PREFIX = "org.apache.karaf.command.acl.";
 
-//    private final ConcurrentMap<ServiceReference<?>, ServiceRegistrationHolder> proxyMap =
-//            new ConcurrentHashMap<ServiceReference<?>, ServiceRegistrationHolder>();
     private ConfigurationAdmin configAdmin;
 
     public void setConfigAdmin(ConfigurationAdmin configAdmin) {
@@ -120,7 +117,7 @@ public class CommandProxyCatalog implements ConfigurationListener {
             throw new IllegalStateException("Badly formatted argument match: " + commandACLArgs + " Should end with '/]'");
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("[/.*/,"); // Add an argument since the Function execute method has the arguments as second arg
+        sb.append("[/.*/,"); // Add a wildcard argument since the Function execute method has the arguments as second arg
         sb.append(commandACLArgs.substring(1));
         return sb.toString();
     }
@@ -130,92 +127,4 @@ public class CommandProxyCatalog implements ConfigurationListener {
         System.out.println("### Received Configuration Event: " + event.getPid());
         // TODO update generated configuration
     }
-
-    /*
-    boolean isProxy(ServiceReference<?> sr) {
-        return sr.getProperty(PROXY_COMMAND_ROLES_PROPERTY) != null;
-    }
-
-    void proxy(ServiceReference<?> originalRef) throws Exception {
-        if (proxyMap.containsKey(originalRef)) {
-            return;
-        }
-        if (isProxy(originalRef)) {
-            return;
-        }
-
-        Dictionary<String, Object> props = proxyProperties(originalRef);
-        BundleContext context = originalRef.getBundle().getBundleContext();
-
-        // make sure it's on the map before the proxy is registered, as that can trigger
-        // another call into this method, and we need to make sure that it doesn't proxy
-        // the service again.
-        ServiceRegistrationHolder registrationHolder = new ServiceRegistrationHolder();
-        proxyMap.put(originalRef, registrationHolder);
-
-        ServiceRegistration<?> proxyReg = context.registerService((String[]) originalRef.getProperty(Constants.OBJECTCLASS),
-                context.getService(originalRef), props);
-
-        // put the actual service registration in the holder
-        registrationHolder.registration = proxyReg;
-
-        // TODO register listener that unregisters the proxy once the original service is gone.
-        // Note that this listener must be registered under the bundlecontext of the system bundle
-        // otherwise we won't get notified!
-    }
-
-    private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr) throws Exception {
-        Dictionary<String, Object> p = new Hashtable<String, Object>();
-
-        for (String key : sr.getPropertyKeys()) {
-            p.put(key, sr.getProperty(key));
-        }
-        List<String> roles = getRoles(sr);
-        p.put(PROXY_COMMAND_ROLES_PROPERTY, roles);
-        return p;
-    }
-
-    private List<String> getRoles(ServiceReference<?> sr) throws Exception {
-        String scope = "" + sr.getProperty("osgi.command.scope");
-        String function = "" + sr.getProperty("osgi.command.function");
-        if (scope == null || function == null)
-            return Collections.emptyList();
-
-        if (scope.trim().equals("*")) {
-            scope = "xxglobalxx"; // TODO what to do here?
-        }
-
-        Configuration[] configs = configAdmin.listConfigurations("(service.pid=" + PROXY_COMMAND_ACL_PID_PREFIX + scope + ")");
-        if (configs == null)
-            return Collections.emptyList();
-
-        for (Configuration c : configs) {
-            List<String> l = new ArrayList<String>();
-
-            for (Enumeration<String> e = c.getProperties().keys(); e.hasMoreElements(); ) {
-                String key = e.nextElement();
-
-                String bareCommand = key;
-                int idx = bareCommand.indexOf('[');
-                if (idx >= 0) {
-                    bareCommand = bareCommand.substring(0, idx);
-                }
-                if (bareCommand.trim().equals(function)) {
-                    Object roles = c.getProperties().get(key);
-                    if (roles instanceof String) {
-                        for (String r : ((String) roles).split(",")) {
-                            l.add(r.trim());
-                        }
-                    }
-                }
-            }
-            return l;
-        }
-        return Collections.emptyList();
-    }
-
-    private static class ServiceRegistrationHolder {
-        ServiceRegistration<?> registration;
-    }
-    */
 }

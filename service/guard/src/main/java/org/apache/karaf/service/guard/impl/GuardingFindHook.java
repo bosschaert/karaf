@@ -18,13 +18,18 @@ package org.apache.karaf.service.guard.impl;
 
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.regex.Pattern;
 
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
+import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.hooks.service.FindHook;
 
 public class GuardingFindHook implements FindHook {
+    private static final Pattern GUARD_ROLES_CONDITION =
+            Pattern.compile("[!]?\\s*\\(\\s*" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "\\s*[=]\\s*[a-zA-Z0-9*]+\\s*\\)");
+
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
     private final Filter servicesFilter;
@@ -38,6 +43,13 @@ public class GuardingFindHook implements FindHook {
     @Override
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
+        if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
+            // TODO should we only do this when nothing was returned? Probably better to do it always?
+            // Someone is looking for a service based on roles, trigger a lookup of the service
+            // without the roles, which will cause the service proxy with the roles being registered
+            triggerProxyCreation(context, filter);
+        }
+
         if (servicesFilter == null) {
             return;
         }
@@ -64,6 +76,18 @@ public class GuardingFindHook implements FindHook {
                     throw new RuntimeException(e);
                 }
             }
+        }
+    }
+
+    private void triggerProxyCreation(BundleContext context, String filter) {
+        // TODO this can be done in a separate thread
+
+        String newFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("(service.id=*)"); // Replace with some dummy condition that will always succeed
+        try {
+            context.getServiceReferences((String) null, newFilter);
+        } catch (InvalidSyntaxException e) {
+            // Should log this...
+            e.printStackTrace();
         }
     }
 }
