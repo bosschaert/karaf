@@ -30,6 +30,28 @@ public class ACLConfigurationParser {
         return getRolesForInvocation(methodName, params, null, config);
     }
 
+    /**
+     * Returns the roles that can invoke the given operation. This is determined by matching the
+     * operation details against configuration provided.<p/>
+     *
+     * The following configuration is supported. Keys are used to match an invocation against. The value can contain
+     * a comma-separated list of roles. Spaces are ignored for the role values. Nnote that comments are allowed in the
+     * value field after the hash {@code #} character):
+     * <pre>
+     * {@code
+     * methodName = role1, role2
+     * methodName(int)[/17/] = role1
+     * }</pre>
+     * @param methodName The method name to be invoked.
+     * @param params The parameters provided for the invocation. May be {@code null} for cases there the parameter aren't
+     * known yet. In this case the roles that can <em>potentially</em> invoke the method are returned, although based on
+     * parameter values the actual invocation may still be denied.
+     * @param signature The signature of the method specified as an array of class names. For simple types
+     * the simple type name is used (e.g. "int").
+     * @param config The configuration to check against.
+     * @return A list of roles (which may be empty) if a matching configuration item has been found.
+     * {@code null} if no matching configuration was found.
+     */
     public static List<String> getRolesForInvocation(String methodName, Object[] params, String[] signature,
             Dictionary<String, Object> config) {
         Dictionary<String, Object> properties = trimKeys(config);
@@ -75,7 +97,11 @@ public class ACLConfigurationParser {
                 foundExactOrRegExp = true;
             }
 
-            foundExactOrRegExp |= getRegExpRoles(properties, methodName, signature, params, roles);
+             List<String> r = getRegExpRoles(properties, methodName, signature, params);
+             if (r != null) {
+                 foundExactOrRegExp = true;
+                 roles.addAll(r);
+             }
 
             if (foundExactOrRegExp) {
                 // Since we have the actual parameters we can match them and if they do we won't look for any
@@ -83,7 +109,11 @@ public class ACLConfigurationParser {
                 return roles;
             }
         } else {
-            foundExactOrRegExp = getExactArgOrRegExpRoles(properties, methodName, signature, roles);
+            List<String> r = getExactArgOrRegExpRoles(properties, methodName, signature);
+            if (r != null) {
+                foundExactOrRegExp = true;
+                roles.addAll(r);
+            }
         }
 
         Object signatureRoles = properties.get(getSignature(methodName, signature));
@@ -194,7 +224,8 @@ public class ACLConfigurationParser {
         return sb.toString();
     }
 
-    private static boolean getRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, Object[] params, List<String> roles) {
+    private static List<String> getRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, Object[] params) {
+        List<String> roles = new ArrayList<String>();
         boolean matchFound = false;
         String methodSig = getSignature(methodName, signature);
         String prefix = methodSig + "[/";
@@ -206,16 +237,16 @@ public class ACLConfigurationParser {
                     matchFound = true;
                     Object roleStr = properties.get(key);
                     if (roleStr instanceof String) {
-                        // TODO can we not simply return here? There are other similar places too...
                         roles.addAll(parseRoles((String) roleStr));
                     }
                 }
             }
         }
-        return matchFound;
+        return matchFound ? roles : null;
     }
 
-    private static boolean getExactArgOrRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature, List<String> roles) {
+    private static List<String> getExactArgOrRegExpRoles(Dictionary<String, Object> properties, String methodName, String[] signature) {
+        List<String> roles = new ArrayList<String>();
         boolean matchFound = false;
         String methodSig = getSignature(methodName, signature);
         String prefix = methodSig + "[";
@@ -229,7 +260,7 @@ public class ACLConfigurationParser {
                 }
             }
         }
-        return matchFound;
+        return matchFound ? roles : null;
     }
 
     private static List<String> getMethodNameWildcardRoles(Dictionary<String, Object> properties, String methodName) {
