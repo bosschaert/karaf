@@ -39,10 +39,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.felix.service.command.CommandProcessor;
+import org.apache.felix.webconsole.AbstractWebConsolePlugin;
 import org.apache.karaf.jaas.boot.principal.UserPrincipal;
 import org.apache.karaf.shell.console.Console;
 import org.apache.karaf.shell.console.ConsoleFactory;
-import org.apache.felix.webconsole.AbstractWebConsolePlugin;
 import org.osgi.framework.BundleContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -190,7 +190,7 @@ public class GogoPlugin extends AbstractWebConsolePlugin {
                 PrintStream pipedOut = new PrintStream(new PipedOutputStream(out), true);
 
                 final Subject subject = new Subject();
-                subject.getPrincipals().add(new UserPrincipal("karaf"));
+                subject.getPrincipals().add(new UserPrincipal("karaf")); // TODO should properly log in
                 Console console = consoleFactory.create(commandProcessor,
                         new PipedInputStream(in),
                         pipedOut,

@@ -22,13 +22,6 @@
            xmlns:ext="http://aries.apache.org/blueprint/xmlns/blueprint-ext/v1.0.0"
            xmlns:jaas="http://karaf.apache.org/xmlns/jaas/v1.0.0">
 
-    <!-- Allow the use of system properties -->
-    <ext:property-placeholder placeholder-prefix="$[" placeholder-suffix="]">
-        <ext:default-properties>
-            <ext:property name="karaf.admin.role" value="admin" />
-        </ext:default-properties>
-    </ext:property-placeholder>
-
     <!-- Property place holder -->
     <cm:property-placeholder persistent-id="org.apache.karaf.management" update-strategy="reload">
         <cm:default-properties>
