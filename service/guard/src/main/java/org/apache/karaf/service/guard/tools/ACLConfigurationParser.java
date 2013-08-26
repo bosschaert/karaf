@@ -39,9 +39,27 @@ public class ACLConfigurationParser {
      * value field after the hash {@code #} character):
      * <pre>
      * {@code
-     * methodName = role1, role2
-     * methodName(int)[/17/] = role1
+     * myMethod = role1, role2
+     * methodName(int)[/17/] = role1              # regex match, assume it's surrounded by ^ and $
+     * methodName(int)[/[01]8/] = role2
+     * methodName(int)["19"] = role3              # exact value match
+     * methodName(int) = role4                    # signature match
+     * methodName(java.lang.String, int) = role 5 # signature match
+     * methodName =                               # no roles can invoke this method
+     * method* = role6                            # name prefix/wildcard match. The asterisk must appear at the end
      * }</pre>
+     * The following algorithm is used to find matching roles:
+     * <ol>
+     * <li>Find all regex and exact value matches. For all parameters these matches are found by calling {@code toString()}
+     * on the parameters passed in. If there are multiple matches in this category all the matching roles are collected.
+     * If any are found return these roles.
+     * <li>Find a signature match. If found return the associated roles.
+     * <li>Find a method name match. If found return the associated roles.
+     * <li>Find a method name prefix/wildcard match. If more than one prefixes match, the roles associated with the longest
+     * prefix is used. So for example, if there are rules for {@code get*} and {@code *} only the roles associated with
+     * {@code get*} are returned.
+     * <li>If none of the above criteria match this method returns {@code null}.
+     * </ol>
      * @param methodName The method name to be invoked.
      * @param params The parameters provided for the invocation. May be {@code null} for cases there the parameter aren't
      * known yet. In this case the roles that can <em>potentially</em> invoke the method are returned, although based on
@@ -55,20 +73,6 @@ public class ACLConfigurationParser {
     public static List<String> getRolesForInvocation(String methodName, Object[] params, String[] signature,
             Dictionary<String, Object> config) {
         Dictionary<String, Object> properties = trimKeys(config);
-
-        /*
-        1. get all direct string matches
-        2. get regexp matches
-        3. get signature matches
-        4. get all direct string matches without signature
-        5. get regexp matches without signature
-        6. without signature
-        7. method name wildcard
-
-        We return immediately when a definition is found, so if a specific definition is found
-        we do not search for a more generic specification.
-        Regular expressions and exact matches are considered equally specific, so they are combined...
-         */
 
         if (signature != null) {
             List<String> roles = getRolesBasedOnSignature(methodName, params, signature, properties);
