@@ -59,12 +59,14 @@ public class GuardProxyCatalog {
 
     static final String PROXY_MARKER_KEY = "." + GuardProxyCatalog.class.getName();
 
+    private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
+
     private final BundleContext bundleContext;
     final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
     final ServiceTracker<ProxyManager, ProxyManager> proxyManagerTracker;
     final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
             new ConcurrentHashMap<ProxyMapKey, ServiceRegistrationHolder>();
-    final BlockingQueue<CreateProxyRunnable> proxyQueue = new LinkedBlockingQueue<CreateProxyRunnable>();
+    final BlockingQueue<CreateProxyRunnable> createProxyQueue = new LinkedBlockingQueue<CreateProxyRunnable>();
     volatile boolean runProxyCreator = true;
 
     GuardProxyCatalog(BundleContext bc) throws Exception {
@@ -177,7 +179,7 @@ public class GuardProxyCatalog {
                 // TODO register listener that unregisters the proxy once the original service is gone.
             }
         };
-        proxyQueue.put(cpr);
+        createProxyQueue.put(cpr);
     }
 
     private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr, BundleContext clientBC) throws Exception {
@@ -187,54 +189,11 @@ public class GuardProxyCatalog {
             p.put(key, sr.getProperty(key));
         }
         p.put(PROXY_MARKER_KEY, new Long(clientBC.getBundle().getBundleId()));
-        p.put(SERVICE_GUARD_ROLES_PROPERTY, getServiceInvocationRoles(sr));
-        // System.out.println("### Proxy properties: " + p);
+        List<String> roles = getServiceInvocationRoles(sr);
+        if (roles != null) {
+            p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+        }
         return p;
-    }
-
-    private static class ServiceRegistrationHolder {
-        ServiceRegistration<?> registration;
-    }
-
-    /**
-     * Key for the proxy map. Note that each service client bundle gets its own proxy as service factories
-     * can cause each client to get a separate service instance.
-     */
-    private static class ProxyMapKey {
-        private final ServiceReference<?> serviceReference;
-        private final long clientBundleID;
-
-        ProxyMapKey(ServiceReference<?> sr, BundleContext clientBC) {
-            serviceReference = sr;
-            clientBundleID = clientBC.getBundle().getBundleId();
-        }
-
-        @Override
-        public int hashCode() {
-            int result = 1;
-            result = 31 * result + (int) (clientBundleID ^ (clientBundleID >>> 32));
-            result = 31 * result + ((serviceReference == null) ? 0 : serviceReference.hashCode());
-            return result;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj)
-                return true;
-            if (obj == null)
-                return false;
-            if (getClass() != obj.getClass())
-                return false;
-            ProxyMapKey other = (ProxyMapKey) obj;
-            if (clientBundleID != other.clientBundleID)
-                return false;
-            if (serviceReference == null) {
-                if (other.serviceReference != null)
-                    return false;
-            } else if (!serviceReference.equals(other.serviceReference))
-                return false;
-            return true;
-        }
     }
 
     // Returns what roles can possibly ever invoke this service. Note that not every invocation may be successful
@@ -279,10 +238,53 @@ public class GuardProxyCatalog {
         return allRoles;
     }
 
-    private static final Pattern JAVA_CLASS_NAME_PART_PATTERN =
-            Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
     private boolean isValidMethodName(String name) {
         return JAVA_CLASS_NAME_PART_PATTERN.matcher(name).matches();
+    }
+
+    static class ServiceRegistrationHolder {
+        volatile ServiceRegistration<?> registration;
+    }
+
+    /**
+     * Key for the proxy map. Note that each service client bundle gets its own proxy as service factories
+     * can cause each client to get a separate service instance.
+     */
+    static class ProxyMapKey {
+        private final ServiceReference<?> serviceReference;
+        private final long clientBundleID;
+
+        ProxyMapKey(ServiceReference<?> sr, BundleContext clientBC) {
+            serviceReference = sr;
+            clientBundleID = clientBC.getBundle().getBundleId();
+        }
+
+        @Override
+        public int hashCode() {
+            int result = 1;
+            result = 31 * result + (int) (clientBundleID ^ (clientBundleID >>> 32));
+            result = 31 * result + ((serviceReference == null) ? 0 : serviceReference.hashCode());
+            return result;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj)
+                return true;
+            if (obj == null)
+                return false;
+            if (getClass() != obj.getClass())
+                return false;
+            ProxyMapKey other = (ProxyMapKey) obj;
+            if (clientBundleID != other.clientBundleID)
+                return false;
+            if (serviceReference == null) {
+                if (other.serviceReference != null)
+                    return false;
+            } else if (!serviceReference.equals(other.serviceReference))
+                return false;
+            return true;
+        }
     }
 
     private class ProxyInvocationListener implements InvocationListener {
@@ -400,7 +402,7 @@ public class GuardProxyCatalog {
                 public void run() {
                     while (runProxyCreator) {
                         try {
-                            CreateProxyRunnable proxyCreator = proxyQueue.take();
+                            CreateProxyRunnable proxyCreator = createProxyQueue.take();
                             proxyCreator.run(proxyManager);
                         } catch (Exception e) {
                             // TODO Log
