@@ -155,6 +155,9 @@ public class GuardProxyCatalog {
             }
         }
 
+        // TODO remove any classes from objectClassProperty that we don't implement
+        // If there are none left, just register it under some dummy class.
+
         InvocationListener il = new ProxyInvocationListener(originalRef);
         Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
         ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
