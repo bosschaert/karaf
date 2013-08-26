@@ -90,6 +90,29 @@ public class GuardProxyCatalogTest {
         assertFalse(gpc.isProxyFor(mockServiceReference(new Hashtable<String, Object>()), testBC));
     }
 
+    @Test
+    public void testProxy() throws Exception {
+        BundleContext bc = mockBundleContext();
+
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        ServiceReference<?> sr = mockServiceReference(props);
+
+        Bundle clientBundle = EasyMock.createMock(Bundle.class);
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(999L).anyTimes();
+        EasyMock.replay(clientBundle);
+
+        BundleContext clientBC = EasyMock.createMock(BundleContext.class);
+        EasyMock.expect(clientBC.getBundle()).andReturn(clientBundle).anyTimes();
+        EasyMock.replay(clientBC);
+
+        assertEquals("Precondition", 0, gpc.proxyMap.size());
+        gpc.proxyIfNotAlreadyProxied(sr, clientBC);
+        assertEquals(1, gpc.proxyMap.size());
+        // TODO check contents of map
+    }
+
     private BundleContext mockBundleContext() throws InvalidSyntaxException {
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
         EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {

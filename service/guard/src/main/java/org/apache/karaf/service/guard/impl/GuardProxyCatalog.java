@@ -30,8 +30,10 @@ import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Pattern;
 
 import javax.security.auth.Subject;
@@ -49,6 +51,7 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.util.tracker.ServiceTracker;
+import org.osgi.util.tracker.ServiceTrackerCustomizer;
 
 public class GuardProxyCatalog {
     public static final String KARAF_SECURED_SERVICES_SYSPROP = "karaf.secured.services";
@@ -59,9 +62,10 @@ public class GuardProxyCatalog {
     private final BundleContext bundleContext;
     final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
     final ServiceTracker<ProxyManager, ProxyManager> proxyManagerTracker;
-    private final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
+    final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
             new ConcurrentHashMap<ProxyMapKey, ServiceRegistrationHolder>();
-
+    final BlockingQueue<CreateProxyRunnable> proxyQueue = new LinkedBlockingQueue<CreateProxyRunnable>();
+    volatile boolean runProxyCreator = true;
 
     GuardProxyCatalog(BundleContext bc) throws Exception {
         bundleContext = bc;
@@ -71,7 +75,8 @@ public class GuardProxyCatalog {
         configAdminTracker.open();
 
         Filter pmFilter = getNonProxyFilter(bc, ProxyManager.class);
-        proxyManagerTracker = new ServiceTracker<ProxyManager, ProxyManager>(bc, pmFilter, null);
+        proxyManagerTracker = new ServiceTracker<ProxyManager, ProxyManager>(bc, pmFilter, new ServiceProxyCreatorCustomizer()) {
+        };
         proxyManagerTracker.open();
     }
 
@@ -83,6 +88,7 @@ public class GuardProxyCatalog {
     }
 
     void close() {
+        runProxyCreator = false;
         proxyManagerTracker.close();
         configAdminTracker.close();
 
@@ -100,7 +106,7 @@ public class GuardProxyCatalog {
         return new Long(clientBC.getBundle().getBundleId()).equals(sr.getProperty(PROXY_MARKER_KEY));
     }
 
-    void proxyIfNotAlreadyProxied(ServiceReference<?> originalRef, BundleContext clientBC) throws Exception {
+    void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC) throws Exception {
         if (isProxy(originalRef)) {
             // It's already a proxy, don't re-proxy
             return;
@@ -110,65 +116,68 @@ public class GuardProxyCatalog {
         // another call into this method, and we need to make sure that it doesn't proxy
         // the service again.
         ProxyMapKey key = new ProxyMapKey(originalRef, clientBC);
-        ServiceRegistrationHolder registrationHolder = new ServiceRegistrationHolder();
+        final ServiceRegistrationHolder registrationHolder = new ServiceRegistrationHolder();
         ServiceRegistrationHolder previousHolder = proxyMap.putIfAbsent(key, registrationHolder);
         if (previousHolder != null) {
             // There is already a proxy for this service for this client bundle.
             return;
         }
 
-        // System.out.println("*** About to Proxy: " + originalRef + " for " + clientBC.getBundle().getSymbolicName());
-
-        ProxyManager pm = proxyManagerTracker.getService();
-        if (pm == null) {
-            throw new IllegalStateException("Proxy Manager is not found");
-            // TODO queue them up and wait...
-        }
-
-        String[] objectClassProperty = (String[]) originalRef.getProperty(Constants.OBJECTCLASS);
-        Object svc = clientBC.getService(originalRef);
-        Set<Class<?>> allClasses = new HashSet<Class<?>>();
-        for (String cls : objectClassProperty) {
-            try {
-                allClasses.add(clientBC.getBundle().loadClass(cls));
-            } catch (Exception e) {
-                // The client has no visibility of the class, so it's no use for it...
-            }
-        }
-        allClasses.addAll(Arrays.asList(svc.getClass().getInterfaces()));
-        allClasses.addAll(Arrays.asList(svc.getClass().getClasses()));
-        allClasses.addAll(Arrays.asList(svc.getClass().getDeclaredClasses())); // TODO what is this for?
-        allClasses.add(svc.getClass()); // TODO is this needed?
-
-        nextClass:
-        for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
-            Class<?> cls = i.next();
-            if ((cls.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
-                // Do not attempt to proxy private or final classes
-                i.remove();
-            } else {
-                for (Method m : cls.getDeclaredMethods()) {
-                    if ((m.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
-                        // Do not attempt to proxy classes that contain final or private methods
-                        i.remove();
-                        continue nextClass;
+        // Instead of immediately creating the proxy, we add the code that creates the proxy to the proxyQueue.
+        // This has 2 advantages:
+        //  1. creating a proxy, can be processor intensive which benefits from asynchronous execution
+        //  2. it also means that we can better react to the fact that the ProxyManager service might arrive
+        //     later. As soon as the Proxy Manager is available, the queue is emptied and the proxies created.
+        CreateProxyRunnable cpr = new CreateProxyRunnable() {
+            @Override
+            public void run(ProxyManager pm) throws Exception {
+                String[] objectClassProperty = (String[]) originalRef.getProperty(Constants.OBJECTCLASS);
+                Object svc = clientBC.getService(originalRef);
+                Set<Class<?>> allClasses = new HashSet<Class<?>>();
+                for (String cls : objectClassProperty) {
+                    try {
+                        allClasses.add(clientBC.getBundle().loadClass(cls));
+                    } catch (Exception e) {
+                        // The client has no visibility of the class, so it's no use for it...
                     }
                 }
+                allClasses.addAll(Arrays.asList(svc.getClass().getInterfaces()));
+                allClasses.addAll(Arrays.asList(svc.getClass().getClasses()));
+                allClasses.addAll(Arrays.asList(svc.getClass().getDeclaredClasses())); // TODO what is this for?
+                allClasses.add(svc.getClass()); // TODO is this needed?
+
+                nextClass:
+                for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
+                    Class<?> cls = i.next();
+                    if ((cls.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
+                        // Do not attempt to proxy private or final classes
+                        i.remove();
+                    } else {
+                        for (Method m : cls.getDeclaredMethods()) {
+                            if ((m.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
+                                // Do not attempt to proxy classes that contain final or private methods
+                                i.remove();
+                                continue nextClass;
+                            }
+                        }
+                    }
+                }
+
+                // TODO remove any classes from objectClassProperty that we don't implement
+                // If there are none left, just register it under some dummy class.
+
+                InvocationListener il = new ProxyInvocationListener(originalRef);
+                Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
+                ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
+                        objectClassProperty, proxyService, proxyProperties(originalRef, clientBC));
+
+                // put the actual service registration in the holder
+                registrationHolder.registration = proxyReg;
+
+                // TODO register listener that unregisters the proxy once the original service is gone.
             }
-        }
-
-        // TODO remove any classes from objectClassProperty that we don't implement
-        // If there are none left, just register it under some dummy class.
-
-        InvocationListener il = new ProxyInvocationListener(originalRef);
-        Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
-        ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
-                objectClassProperty, proxyService, proxyProperties(originalRef, clientBC));
-
-        // put the actual service registration in the holder
-        registrationHolder.registration = proxyReg;
-
-        // TODO register listener that unregisters the proxy once the original service is gone.
+        };
+        proxyQueue.put(cpr);
     }
 
     private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr, BundleContext clientBC) throws Exception {
@@ -372,5 +381,51 @@ public class GuardProxyCatalog {
                 roles.add(trimmed);
         }
         return roles;
+    }
+
+    class ServiceProxyCreatorCustomizer implements ServiceTrackerCustomizer<ProxyManager, ProxyManager> {
+        @Override
+        public ProxyManager addingService(ServiceReference<ProxyManager> reference) {
+            runProxyCreator = true;
+            final ProxyManager svc = bundleContext.getService(reference);
+            if (svc != null) {
+                newProxyProducingThread(svc);
+            }
+            return svc;
+        }
+
+        private void newProxyProducingThread(final ProxyManager proxyManager) {
+            Thread t = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    while (runProxyCreator) {
+                        try {
+                            CreateProxyRunnable proxyCreator = proxyQueue.take();
+                            proxyCreator.run(proxyManager);
+                        } catch (Exception e) {
+                            // TODO Log
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            });
+            t.setName("Secure OSGi Service Proxy Creator");
+            t.setDaemon(true);
+            t.start();
+        }
+
+        @Override
+        public void modifiedService(ServiceReference<ProxyManager> reference, ProxyManager service) {
+            // no need to react
+        }
+
+        @Override
+        public void removedService(ServiceReference<ProxyManager> reference, ProxyManager service) {
+            runProxyCreator = false; // Will end the proxy creation thread
+        }
+    }
+
+    interface CreateProxyRunnable {
+        void run(ProxyManager pm) throws Exception;
     }
 }
