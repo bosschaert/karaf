@@ -77,12 +77,11 @@ public class GuardProxyCatalog {
         configAdminTracker.open();
 
         Filter pmFilter = getNonProxyFilter(bc, ProxyManager.class);
-        proxyManagerTracker = new ServiceTracker<ProxyManager, ProxyManager>(bc, pmFilter, new ServiceProxyCreatorCustomizer()) {
-        };
+        proxyManagerTracker = new ServiceTracker<ProxyManager, ProxyManager>(bc, pmFilter, new ServiceProxyCreatorCustomizer());
         proxyManagerTracker.open();
     }
 
-    private Filter getNonProxyFilter(BundleContext bc, Class<?> clazz) throws InvalidSyntaxException {
+    static Filter getNonProxyFilter(BundleContext bc, Class<?> clazz) throws InvalidSyntaxException {
         Filter caFilter = bc.createFilter(
                 "(&(" + Constants.OBJECTCLASS + "=" + clazz.getName() +
                 ")(!(" + PROXY_MARKER_KEY + "=*)))");
@@ -233,9 +232,13 @@ public class GuardProxyCatalog {
                     for (Enumeration<String> e = config.getProperties().keys(); e.hasMoreElements(); ) {
                         String key = e.nextElement();
                         String bareKey = key;
-                        int idx = bareKey.indexOf('[');
+                        int idx = bareKey.indexOf('(');
                         if (idx >= 0) {
                             bareKey = bareKey.substring(0, idx);
+                        }
+                        int idx2 = bareKey.indexOf('*');
+                        if (idx2 >= 0) {
+                            bareKey = bareKey.substring(0, idx2);
                         }
                         if (!isValidMethodName(bareKey)) {
                             continue;
