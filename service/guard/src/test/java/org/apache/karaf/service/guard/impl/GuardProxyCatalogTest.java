@@ -48,7 +48,7 @@ import org.osgi.framework.wiring.BundleWiring;
 
 public class GuardProxyCatalogTest {
     // Some assertions fail when run under a coverage tool, they are skipped when this is set to true
-    private static final boolean runningUnderCoverage = false;
+    private static final boolean runningUnderCoverage = true;
 
     @Test
     public void testGuardProxyCatalog() throws Exception {
@@ -109,11 +109,11 @@ public class GuardProxyCatalogTest {
     public void testCreateProxy() throws Exception {
         // This method tests proxy creation for various service implementation types.
 
-//        testCreateProxy(TestServiceAPI.class, new TestService());
-//        testCreateProxy(TestServiceAPI.class, new DescendantTestService());
-//        testCreateProxy(TestServiceAPI.class, new PrivateTestService());
-//        testCreateProxy(TestServiceAPI.class, new PrivateTestServiceNoDirectInterfaces());
-//        testCreateProxy(TestServiceAPI.class, new FinalTestService());
+        testCreateProxy(TestServiceAPI.class, new TestService());
+        testCreateProxy(TestServiceAPI.class, new DescendantTestService());
+        testCreateProxy(TestServiceAPI.class, new PrivateTestService());
+        testCreateProxy(TestServiceAPI.class, new PrivateTestServiceNoDirectInterfaces());
+        testCreateProxy(TestServiceAPI.class, new FinalTestService());
         testCreateProxy(TestObjectWithoutInterface.class, new TestObjectWithoutInterface());
         testCreateProxy(TestServiceAPI.class, new CombinedTestService());
         testCreateProxy(PrivateTestService.class, Object.class, new PrivateTestService());
@@ -135,6 +135,24 @@ public class GuardProxyCatalogTest {
     @Test
     public void testCreateProxyMultipleObjectClasses() throws Exception {
         testCreateProxy(new Class [] {TestServiceAPI.class, TestService.class}, new TestService());
+    }
+
+    @Test
+    public void testDontReProxy() throws Exception {
+        BundleContext bc = mockBundleContext();
+
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+        assertEquals("Precondition", 0, gpc.proxyMap.size());
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        props.put(GuardProxyCatalog.PROXY_MARKER_KEY, 123l);
+        ServiceReference<?> sr = mockServiceReference(props);
+
+        BundleContext clientBC = EasyMock.createMock(BundleContext.class);
+        EasyMock.replay(clientBC);
+
+        gpc.proxyIfNotAlreadyProxied(sr, clientBC);
+        assertEquals(0, gpc.proxyMap.size());
     }
 
     @SuppressWarnings("rawtypes")
@@ -260,6 +278,13 @@ public class GuardProxyCatalogTest {
                 assertEquals(-42L, ((TestObjectWithoutInterface) proxyService).compute(42L));
             }
         }
+
+        // Attempt to proxy the service again, make sure that no re-proxying happens
+        assertEquals("Precondition", 1, gpc.proxyMap.size());
+        assertEquals("Precondition", 0, gpc.createProxyQueue.size());
+        gpc.proxyIfNotAlreadyProxied(sr, clientBC);
+        assertEquals("No additional proxy should have been created", 1, gpc.proxyMap.size());
+        assertEquals("No additional work on the queue is expected", 0, gpc.createProxyQueue.size());
 
         gpc.close();
         EasyMock.verify(holder.registration); // checks that the unregister call was made
