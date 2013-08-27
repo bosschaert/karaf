@@ -151,8 +151,9 @@ public class GuardProxyCatalog {
                 nextClass:
                 for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
                     Class<?> cls = i.next();
-                    if ((cls.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
-                        // Do not attempt to proxy private or final classes
+                    if (((cls.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) ||
+                        cls.isAnonymousClass()) {
+                        // Do not attempt to proxy private, final or anonymous classes
                         i.remove();
                     } else {
                         for (Method m : cls.getDeclaredMethods()) {
@@ -170,6 +171,12 @@ public class GuardProxyCatalog {
 
                 InvocationListener il = new ProxyInvocationListener(originalRef);
                 Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
+//                /* */
+//                System.out.println("About to register:");
+//                System.out.println("  " + Arrays.toString(objectClassProperty));
+//                System.out.println("  " + proxyService);
+//                System.out.println("  " + proxyProperties(originalRef, clientBC));
+//                /* */
                 ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
                         objectClassProperty, proxyService, proxyProperties(originalRef, clientBC));
 

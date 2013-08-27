@@ -18,12 +18,15 @@ package org.apache.karaf.service.guard.impl;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Collections;
 import java.util.Dictionary;
+import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.Map;
 
 import org.apache.aries.proxy.ProxyManager;
 import org.apache.aries.proxy.impl.AsmProxyManager;
@@ -42,6 +45,9 @@ import org.osgi.framework.ServiceRegistration;
 import org.osgi.framework.wiring.BundleWiring;
 
 public class GuardProxyCatalogTest {
+    // Some tests fail when run under a coverage tool, they are skipped when this is set to true
+    private static final boolean runningUnderCoverage = false;
+
     @Test
     public void testGuardProxyCatalog() throws Exception {
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
@@ -103,10 +109,18 @@ public class GuardProxyCatalogTest {
 
         testCreateProxy(TestServiceAPI.class, new TestService());
         testCreateProxy(TestObjectWithoutInterface.class, new TestObjectWithoutInterface());
+        testCreateProxy(Object.class, new TestService());
+        testCreateProxy(Object.class, new TestObjectWithoutInterface());
+        testCreateProxy(TestServiceAPI.class, new TestServiceAPI() {
+            @Override
+            public String doit() {
+                return "Doing it";
+            }
+        });
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
-    public void testCreateProxy(Class intf, Object testService) throws Exception {
+    public void testCreateProxy(final Class intf, Object testService) throws Exception {
         BundleContext bc = mockBundleContext();
 
         // Create the object that is actually being tested here
@@ -117,17 +131,23 @@ public class GuardProxyCatalogTest {
         serviceProps.put(Constants.OBJECTCLASS, new String [] {intf.getName()});
         serviceProps.put(".foo", 123L);
 
+        final Map<ServiceReference<?>, Object> serviceMap = new HashMap<ServiceReference<?>, Object>();
+
         // The mock bundle context for the bundle providing the service is set up here
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
         // These are the expected service properties of the proxy registration. Note the proxy marker...
         Hashtable<String, Object> proxyProps = new Hashtable<String, Object>(serviceProps);
         proxyProps.put(GuardProxyCatalog.PROXY_MARKER_KEY, 999L);
         // This will check that the right proxy is being registered.
-        EasyMock.expect(providerBC.registerService(
-                EasyMock.aryEq(new String [] {intf.getName()}),
-                EasyMock.isA(intf), EasyMock.eq(proxyProps))).andAnswer(new IAnswer() {
+        EasyMock.expect(providerBC.registerService(EasyMock.aryEq(new String [] {intf.getName()}),
+                EasyMock.anyObject(), EasyMock.eq(proxyProps))).andAnswer(new IAnswer() {
                     @Override
                     public ServiceRegistration answer() throws Throwable {
+                        if (!runningUnderCoverage) {
+                            Object svc = EasyMock.getCurrentArguments()[1];
+                            assertTrue(intf.isAssignableFrom(svc.getClass()));
+                        }
+
                         Dictionary<String,Object> props = (Dictionary<String, Object>) EasyMock.getCurrentArguments()[2];
 
                         ServiceRegistration reg = EasyMock.createMock(ServiceRegistration.class);
@@ -136,9 +156,18 @@ public class GuardProxyCatalogTest {
                         reg.unregister();
                         EasyMock.expectLastCall().once();
                         EasyMock.replay(reg);
+
+                        serviceMap.put(sr, EasyMock.getCurrentArguments()[1]);
+
                         return reg;
                     }
                 }).once();
+        EasyMock.expect(providerBC.getService(EasyMock.isA(ServiceReference.class))).andAnswer(new IAnswer<Object>() {
+            @Override
+            public Object answer() throws Throwable {
+                return serviceMap.get(EasyMock.getCurrentArguments()[0]);
+            }
+        }).anyTimes();
         EasyMock.replay(providerBC);
 
         // In some cases the proxy-creating code is looking for a classloader (e.g. when run through
@@ -192,8 +221,20 @@ public class GuardProxyCatalogTest {
         // Check that the proxy registration was done on the original provider bundle's context
         EasyMock.verify(providerBC);
 
+        // Test that the actual proxy invokes the original service...
+        Object proxyService = serviceMap.get(proxySR);
+        assertNotSame("The proxy should not be the same object as the original service", testService, proxyService);
+        if (testService instanceof TestServiceAPI) {
+            assertEquals("Doing it", ((TestServiceAPI) proxyService).doit());
+        }
+        if (testService instanceof TestObjectWithoutInterface) {
+            assertEquals(-42L, ((TestObjectWithoutInterface) proxyService).compute(42L));
+        }
+
         gpc.close();
         EasyMock.verify(holder.registration); // checks that the unregister call was made
+
+        // TODO check the service proxy object itself!!
     }
 
     private ProxyManager getProxyManager() {
@@ -234,7 +275,6 @@ public class GuardProxyCatalogTest {
 
     private ServiceReference<?> mockServiceReference(Bundle providerBundle,
             final Dictionary<String, Object> serviceProps) {
-        @SuppressWarnings("unchecked")
         ServiceReference<?> sr = EasyMock.createMock(ServiceReference.class);
 
         EasyMock.expect(sr.getPropertyKeys()).andReturn(
@@ -253,13 +293,13 @@ public class GuardProxyCatalogTest {
     }
 
     public interface TestServiceAPI {
-        public void doit();
+        public String doit();
     }
 
     public class TestService implements TestServiceAPI {
         @Override
-        public void doit() {
-            System.out.println("Doing it");
+        public String doit() {
+            return "Doing it";
         }
     }
 
