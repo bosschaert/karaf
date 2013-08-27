@@ -133,20 +133,27 @@ public class GuardProxyCatalog {
         CreateProxyRunnable cpr = new CreateProxyRunnable() {
             @Override
             public void run(ProxyManager pm) throws Exception {
-                String[] objectClassProperty = (String[]) originalRef.getProperty(Constants.OBJECTCLASS);
+                List<String> objectClassProperty =
+                        new ArrayList<String>(Arrays.asList((String[]) originalRef.getProperty(Constants.OBJECTCLASS)));
                 Object svc = clientBC.getService(originalRef);
                 Set<Class<?>> allClasses = new HashSet<Class<?>>();
-                for (String cls : objectClassProperty) {
+                for (Iterator<String> i = objectClassProperty.iterator(); i.hasNext(); ) {
+                    String cls = i.next();
                     try {
                         allClasses.add(clientBC.getBundle().loadClass(cls));
                     } catch (Exception e) {
                         // The client has no visibility of the class, so it's no use for it...
+                        i.remove();
                     }
                 }
-                allClasses.addAll(Arrays.asList(svc.getClass().getInterfaces()));
-                allClasses.addAll(Arrays.asList(svc.getClass().getClasses()));
-                allClasses.addAll(Arrays.asList(svc.getClass().getDeclaredClasses())); // TODO what is this for?
-                allClasses.add(svc.getClass()); // TODO is this needed?
+
+                Class<?> curClass = svc.getClass();
+                while (curClass != null) {
+                    allClasses.addAll(Arrays.asList(curClass.getInterfaces()));
+                    curClass = curClass.getSuperclass(); // Collect interfaces implemented by super types too
+                }
+
+                allClasses.add(svc.getClass());
 
                 nextClass:
                 for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
@@ -155,30 +162,29 @@ public class GuardProxyCatalog {
                         cls.isAnonymousClass()) {
                         // Do not attempt to proxy private, final or anonymous classes
                         i.remove();
+                        objectClassProperty.remove(cls.getName());
                     } else {
                         for (Method m : cls.getDeclaredMethods()) {
                             if ((m.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
                                 // Do not attempt to proxy classes that contain final or private methods
                                 i.remove();
+                                objectClassProperty.remove(cls.getName());
                                 continue nextClass;
                             }
                         }
                     }
                 }
 
-                // TODO remove any classes from objectClassProperty that we don't implement
-                // If there are none left, just register it under some dummy class.
+                if (objectClassProperty.isEmpty()) {
+                    // If there are no object classes left that the client can see, it must be one of those services
+                    // that is found using other properties. In this case, register it under the Object.class.
+                    objectClassProperty.add(Object.class.getName());
+                }
 
                 InvocationListener il = new ProxyInvocationListener(originalRef);
                 Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
-//                /* */
-//                System.out.println("About to register:");
-//                System.out.println("  " + Arrays.toString(objectClassProperty));
-//                System.out.println("  " + proxyService);
-//                System.out.println("  " + proxyProperties(originalRef, clientBC));
-//                /* */
                 ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
-                        objectClassProperty, proxyService, proxyProperties(originalRef, clientBC));
+                        objectClassProperty.toArray(new String [] {}), proxyService, proxyProperties(originalRef, clientBC));
 
                 // put the actual service registration in the holder
                 registrationHolder.registration = proxyReg;

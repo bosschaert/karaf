@@ -108,9 +108,20 @@ public class GuardProxyCatalogTest {
         // This method tests proxy creation for various service implementation types.
 
         testCreateProxy(TestServiceAPI.class, new TestService());
+        testCreateProxy(TestServiceAPI.class, new DescendantTestService());
+        testCreateProxy(TestServiceAPI.class, new PrivateTestService());
+        testCreateProxy(TestServiceAPI.class, new PrivateTestServiceNoDirectInterfaces());
+        testCreateProxy(TestServiceAPI.class, new FinalTestService());
         testCreateProxy(TestObjectWithoutInterface.class, new TestObjectWithoutInterface());
+        testCreateProxy(TestServiceAPI.class, new CombinedTestService());
+        testCreateProxy(PrivateTestService.class, Object.class, new PrivateTestService());
+        testCreateProxy(PrivateTestServiceNoDirectInterfaces.class, Object.class, new PrivateTestServiceNoDirectInterfaces());
         testCreateProxy(Object.class, new TestService());
+        testCreateProxy(Object.class, new DescendantTestService());
+        testCreateProxy(Object.class, new PrivateTestService());
         testCreateProxy(Object.class, new TestObjectWithoutInterface());
+        testCreateProxy(Object.class, new CombinedTestService());
+        testCreateProxy(Object.class, new FinalTestService());
         testCreateProxy(TestServiceAPI.class, new TestServiceAPI() {
             @Override
             public String doit() {
@@ -119,8 +130,13 @@ public class GuardProxyCatalogTest {
         });
     }
 
-    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @SuppressWarnings("rawtypes")
     public void testCreateProxy(final Class intf, Object testService) throws Exception {
+        testCreateProxy(intf, intf, testService);
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public void testCreateProxy(Class intf, final Class proxyRegClass, Object testService) throws Exception {
         BundleContext bc = mockBundleContext();
 
         // Create the object that is actually being tested here
@@ -139,13 +155,13 @@ public class GuardProxyCatalogTest {
         Hashtable<String, Object> proxyProps = new Hashtable<String, Object>(serviceProps);
         proxyProps.put(GuardProxyCatalog.PROXY_MARKER_KEY, 999L);
         // This will check that the right proxy is being registered.
-        EasyMock.expect(providerBC.registerService(EasyMock.aryEq(new String [] {intf.getName()}),
+        EasyMock.expect(providerBC.registerService(EasyMock.aryEq(new String [] {proxyRegClass.getName()}),
                 EasyMock.anyObject(), EasyMock.eq(proxyProps))).andAnswer(new IAnswer() {
                     @Override
                     public ServiceRegistration answer() throws Throwable {
                         if (!runningUnderCoverage) {
                             Object svc = EasyMock.getCurrentArguments()[1];
-                            assertTrue(intf.isAssignableFrom(svc.getClass()));
+                            assertTrue(proxyRegClass.isAssignableFrom(svc.getClass()));
                         }
 
                         Dictionary<String,Object> props = (Dictionary<String, Object>) EasyMock.getCurrentArguments()[2];
@@ -228,7 +244,9 @@ public class GuardProxyCatalogTest {
             assertEquals("Doing it", ((TestServiceAPI) proxyService).doit());
         }
         if (testService instanceof TestObjectWithoutInterface) {
-            assertEquals(-42L, ((TestObjectWithoutInterface) proxyService).compute(42L));
+            if (!runningUnderCoverage) {
+                assertEquals(-42L, ((TestObjectWithoutInterface) proxyService).compute(42L));
+            }
         }
 
         gpc.close();
@@ -308,4 +326,33 @@ public class GuardProxyCatalogTest {
             return -l;
         }
     }
+
+    public class CombinedTestService extends TestObjectWithoutInterface implements TestServiceAPI {
+        @Override
+        public String doit() {
+            return "Doing it";
+        }
+    }
+
+    private abstract class AbstractService implements TestServiceAPI {
+        @Override
+        public String doit() {
+            return "Doing it";
+        }
+    }
+
+    public class EmptyPublicTestService extends AbstractService {}
+
+    public class DescendantTestService extends EmptyPublicTestService {}
+
+    private class PrivateTestService implements TestServiceAPI {
+        @Override
+        public String doit() {
+            return "Doing it";
+        }
+    }
+
+    private class PrivateTestServiceNoDirectInterfaces extends PrivateTestService {}
+
+    public final class FinalTestService extends AbstractService implements TestServiceAPI {}
 }
