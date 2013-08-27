@@ -97,25 +97,35 @@ public class GuardProxyCatalogTest {
         assertFalse(gpc.isProxyFor(mockServiceReference(new Hashtable<String, Object>()), testBC));
     }
 
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     @Test
     public void testCreateProxy() throws Exception {
+        // This method tests proxy creation for various service implementation types.
+
+        testCreateProxy(TestServiceAPI.class, new TestService());
+        testCreateProxy(TestObjectWithoutInterface.class, new TestObjectWithoutInterface());
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public void testCreateProxy(Class intf, Object testService) throws Exception {
         BundleContext bc = mockBundleContext();
 
+        // Create the object that is actually being tested here
         GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
 
+        // The service being proxied has these properties
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
-        serviceProps.put(Constants.OBJECTCLASS, new String [] {TestServiceAPI.class.getName()});
+        serviceProps.put(Constants.OBJECTCLASS, new String [] {intf.getName()});
         serviceProps.put(".foo", 123L);
 
+        // The mock bundle context for the bundle providing the service is set up here
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
-
-        // This will check that the right proxy is being registered.
+        // These are the expected service properties of the proxy registration. Note the proxy marker...
         Hashtable<String, Object> proxyProps = new Hashtable<String, Object>(serviceProps);
         proxyProps.put(GuardProxyCatalog.PROXY_MARKER_KEY, 999L);
+        // This will check that the right proxy is being registered.
         EasyMock.expect(providerBC.registerService(
-                EasyMock.aryEq(new String [] {TestServiceAPI.class.getName()}),
-                EasyMock.isA(TestServiceAPI.class), EasyMock.eq(proxyProps))).andAnswer(new IAnswer() {
+                EasyMock.aryEq(new String [] {intf.getName()}),
+                EasyMock.isA(intf), EasyMock.eq(proxyProps))).andAnswer(new IAnswer() {
                     @Override
                     public ServiceRegistration answer() throws Throwable {
                         Dictionary<String,Object> props = (Dictionary<String, Object>) EasyMock.getCurrentArguments()[2];
@@ -123,45 +133,57 @@ public class GuardProxyCatalogTest {
                         ServiceRegistration reg = EasyMock.createMock(ServiceRegistration.class);
                         ServiceReference sr = mockServiceReference(props);
                         EasyMock.expect(reg.getReference()).andReturn(sr).anyTimes();
+                        reg.unregister();
+                        EasyMock.expectLastCall().once();
                         EasyMock.replay(reg);
                         return reg;
                     }
                 }).once();
         EasyMock.replay(providerBC);
 
+        // In some cases the proxy-creating code is looking for a classloader (e.g. when run through
+        // a coverage tool such as EclEmma). This will satisfy that.
         BundleWiring bw = EasyMock.createMock(BundleWiring.class);
         EasyMock.expect(bw.getClassLoader()).andReturn(getClass().getClassLoader()).anyTimes();
         EasyMock.replay(bw);
 
-        Bundle providerBundle = EasyMock.createNiceMock(Bundle.class); // ?
+        // The mock bundle that provides the original service (and also the proxy is registered with this)
+        Bundle providerBundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(providerBundle.getBundleContext()).andReturn(providerBC).anyTimes();
         EasyMock.expect(providerBundle.adapt(BundleWiring.class)).andReturn(bw).anyTimes();
         EasyMock.replay(providerBundle);
 
-        ServiceReference<TestServiceAPI> sr = (ServiceReference<TestServiceAPI>) mockServiceReference(providerBundle, serviceProps);
+        ServiceReference sr = mockServiceReference(providerBundle, serviceProps);
 
+        // The mock bundle that consumes the service
         Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(clientBundle.getBundleId()).andReturn(999L).anyTimes();
-        EasyMock.expect(clientBundle.loadClass(TestServiceAPI.class.getName())).andReturn((Class) TestServiceAPI.class).anyTimes();
+        EasyMock.expect(clientBundle.loadClass(intf.getName())).andReturn(intf).anyTimes();
         EasyMock.replay(clientBundle);
 
+        // The mock bundle context for the client bundle
         BundleContext clientBC = EasyMock.createMock(BundleContext.class);
         EasyMock.expect(clientBC.getBundle()).andReturn(clientBundle).anyTimes();
-        EasyMock.expect(clientBC.getService(sr)).andReturn(new TestService()).anyTimes();
+        EasyMock.expect(clientBC.getService(sr)).andReturn(testService).anyTimes();
         EasyMock.replay(clientBC);
 
         assertEquals("Precondition", 0, gpc.proxyMap.size());
         assertEquals("Precondition", 0, gpc.createProxyQueue.size());
+        // Create the proxy for the service
         gpc.proxyIfNotAlreadyProxied(sr, clientBC);
         assertEquals(1, gpc.proxyMap.size());
 
+        // The actual proxy creation is done asynchronously.
         GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new GuardProxyCatalog.ProxyMapKey(sr, clientBC));
         assertNull("The registration shouldn't have happened yet", holder.registration);
         assertEquals(1, gpc.createProxyQueue.size());
 
+        // Mimic the thread that works the queue to create the proxy
         CreateProxyRunnable runnable = gpc.createProxyQueue.take();
         ProxyManager pm = getProxyManager();
         runnable.run(pm);
+
+        // The runnable should have put the actual registration in the holder
         ServiceReference<?> proxySR = holder.registration.getReference();
         for (String key : proxyProps.keySet()) {
             assertEquals(proxyProps.get(key), proxySR.getProperty(key));
@@ -169,6 +191,9 @@ public class GuardProxyCatalogTest {
 
         // Check that the proxy registration was done on the original provider bundle's context
         EasyMock.verify(providerBC);
+
+        gpc.close();
+        EasyMock.verify(holder.registration); // checks that the unregister call was made
     }
 
     private ProxyManager getProxyManager() {
@@ -235,6 +260,12 @@ public class GuardProxyCatalogTest {
         @Override
         public void doit() {
             System.out.println("Doing it");
+        }
+    }
+
+    public class TestObjectWithoutInterface {
+        public long compute(long l) {
+            return -l;
         }
     }
 }
