@@ -158,7 +158,7 @@ public class GuardProxyCatalog {
                 for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
                     Class<?> cls = i.next();
                     if (((cls.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) ||
-                        cls.isAnonymousClass()) {
+                        cls.isAnonymousClass()  || cls.isLocalClass()) {
                         // Do not attempt to proxy private, final or anonymous classes
                         i.remove();
                         objectClassProperty.remove(cls.getName());
@@ -195,15 +195,20 @@ public class GuardProxyCatalog {
     }
 
     private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr, BundleContext clientBC) throws Exception {
-        Dictionary<String, Object> p = new Hashtable<String, Object>();
-
-        for (String key : sr.getPropertyKeys()) {
-            p.put(key, sr.getProperty(key));
-        }
+        Dictionary<String, Object> p = copyProperties(sr);
         p.put(PROXY_MARKER_KEY, new Long(clientBC.getBundle().getBundleId()));
         List<String> roles = getServiceInvocationRoles(sr);
         if (roles != null) {
             p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+        }
+        return p;
+    }
+
+    private Dictionary<String, Object> copyProperties(ServiceReference<?> sr) {
+        Dictionary<String, Object> p = new Hashtable<String, Object>();
+
+        for (String key : sr.getPropertyKeys()) {
+            p.put(key, sr.getProperty(key));
         }
         return p;
     }
@@ -323,12 +328,23 @@ public class GuardProxyCatalog {
                 return null;
             }
 
+            // The service properties against which is matched only contain the object class of the current
+            // method, otherwise there can be contamination across ACLs
+            Dictionary<String, Object> serviceProps = copyProperties(serviceReference);
+            serviceProps.put(Constants.OBJECTCLASS, new String [] {m.getDeclaringClass().getName()});
+
+            String[] sig = new String[m.getParameterTypes().length];
+            for (int i = 0; i < m.getParameterTypes().length; i++) {
+                sig[i] = m.getParameterTypes()[i].getName();
+            }
+
             for (Configuration config : configs) {
                 Object guardFilter = config.getProperties().get("service.guard");
                 if (guardFilter instanceof String) {
                     Filter filter = bundleContext.createFilter((String) guardFilter);
-                    if (filter.match(serviceReference)) {
-                        List<String> roles = ACLConfigurationParser.getRolesForInvocation(m.getName(), args, config.getProperties());
+                    if (filter.match(serviceProps)) {
+                        List<String> roles = ACLConfigurationParser.
+                                getRolesForInvocation(m.getName(), args, sig, config.getProperties());
                         if (roles != null) {
                             for (String role : roles) {
                                 if (currentUserHasRole(role)) {
@@ -383,22 +399,6 @@ public class GuardProxyCatalog {
             }
         }
         return false;
-    }
-
-    static List<String> parseRoles(String roleStr) {
-        int hashIdx = roleStr.indexOf('#');
-        if (hashIdx >= 0) {
-            // You can put a comment at the end
-            roleStr = roleStr.substring(0, hashIdx);
-        }
-
-        List<String> roles = new ArrayList<String>();
-        for (String role : roleStr.split("[,]")) {
-            String trimmed = role.trim();
-            if (trimmed.length() > 0)
-                roles.add(trimmed);
-        }
-        return roles;
     }
 
     class ServiceProxyCreatorCustomizer implements ServiceTrackerCustomizer<ProxyManager, ProxyManager> {

@@ -59,7 +59,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 
 public class GuardProxyCatalogTest {
     // Some assertions fail when run under a code coverage tool, they are skipped when this is set to true
-    private static final boolean runningUnderCoverage = false;
+    private static final boolean runningUnderCoverage = true; // set to false before committing any changes
 
     @Test
     public void testGuardProxyCatalog() throws Exception {
@@ -187,7 +187,7 @@ public class GuardProxyCatalogTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    public void testInvocationBlocking() throws Exception {
+    public void testInvocationBlocking1() throws Exception {
         Dictionary<String, Object> c1 = new Hashtable<String, Object>();
         c1.put(Constants.SERVICE_PID, "foobar");
         c1.put("service.guard", "(objectClass=" + TestServiceAPI.class.getName() + ")");
@@ -208,13 +208,111 @@ public class GuardProxyCatalogTest {
             @Override
             public Object run() {
                 assertEquals("Doing it", ((TestServiceAPI) proxy).doit());
+                if (!runningUnderCoverage) {
+                    try {
+                        ((TestObjectWithoutInterface) proxy).compute(44L);
+                        fail("Should have been blocked");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+                }
+
+                return null;
+            }
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testInvocationBlocking2() throws Exception {
+        Dictionary<String, Object> config = new Hashtable<String, Object>();
+        config.put(Constants.SERVICE_PID, "barfoobar");
+        config.put("service.guard", "(objectClass=" + TestObjectWithoutInterface.class.getName() + ")");
+        config.put("compute(long)[\"42\"]", "b");
+        config.put("compute(long)", "c");
+
+        BundleContext bc = mockConfigAdminBundleContext(config);
+
+        final Object proxy = testCreateProxy(bc, new Class [] {TestServiceAPI.class, TestObjectWithoutInterface.class}, new CombinedTestService());
+
+        // Run with the right credentials so we can test the expected roles
+        Subject subject = new Subject();
+        subject.getPrincipals().add(new RolePrincipal("b"));
+        Subject.doAs(subject, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                if (!runningUnderCoverage) {
+                    assertEquals(-42L, ((TestObjectWithoutInterface) proxy).compute(42L));
+                    try {
+                        ((TestObjectWithoutInterface) proxy).compute(44L);
+                        fail("Should have been blocked");
+                    } catch (SecurityException se) {
+                        // good
+                    }
+                }
+
+                return null;
+            }
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testInvocationBlocking3() throws Exception {
+        class MyService implements TestServiceAPI, TestServiceAPI2 {
+            public String doit(String s) {
+                return new StringBuilder(s).reverse().toString();
+            }
+
+            public String doit() {
+                return "Doing it";
+            }
+        };
+
+        Dictionary<String, Object> c1 = new Hashtable<String, Object>();
+        c1.put(Constants.SERVICE_PID, "foobar");
+        c1.put("service.guard", "(objectClass=" + TestServiceAPI.class.getName() + ")");
+        c1.put("do*", "c");
+        Dictionary<String, Object> c2 = new Hashtable<String, Object>();
+        c2.put(Constants.SERVICE_PID, "foobar2");
+        c2.put("service.guard", "(objectClass=" + TestServiceAPI2.class.getName() + ")");
+        c2.put("doit(java.lang.String)[/[tT][a]+/]", "b,d # a regex rule");
+        c2.put("doit(java.lang.String)", "a");
+
+        BundleContext bc = mockConfigAdminBundleContext(c1, c2);
+
+        final Object proxy = testCreateProxy(bc, new Class [] {TestServiceAPI.class, TestServiceAPI2.class}, new MyService());
+
+        // Run with the right credentials so we can test the expected roles
+        Subject subject = new Subject();
+        subject.getPrincipals().add(new RolePrincipal("c"));
+        Subject.doAs(subject, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                assertEquals("Doing it", ((TestServiceAPI) proxy).doit());
+                return null;
+            }
+        });
+
+        Subject subject2 = new Subject();
+        subject2.getPrincipals().add(new RolePrincipal("b"));
+        subject2.getPrincipals().add(new RolePrincipal("f"));
+        Subject.doAs(subject2, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
                 try {
-                    ((TestObjectWithoutInterface) proxy).compute(44L);
+                    assertEquals("Doing it", ((TestServiceAPI) proxy).doit());
                     fail("Should have been blocked");
                 } catch (SecurityException se) {
                     // good
                 }
-
+                assertEquals("aaT", ((TestServiceAPI2) proxy).doit("Taa"));
+                try {
+                    ((TestServiceAPI2) proxy).doit("t");
+                    fail("Should have been blocked");
+                } catch (SecurityException se) {
+                    // good
+                }
                 return null;
             }
         });
@@ -616,7 +714,7 @@ public class GuardProxyCatalogTest {
     }
 
     public interface TestServiceAPI {
-        public String doit();
+        String doit();
     }
 
     public class TestService implements TestServiceAPI {
@@ -624,6 +722,10 @@ public class GuardProxyCatalogTest {
         public String doit() {
             return "Doing it";
         }
+    }
+
+    public interface TestServiceAPI2 {
+        String doit(String s);
     }
 
     public class TestObjectWithoutInterface {

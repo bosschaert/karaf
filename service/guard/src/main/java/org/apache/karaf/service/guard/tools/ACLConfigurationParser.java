@@ -26,10 +26,6 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 
 public class ACLConfigurationParser {
-    public static List<String> getRolesForInvocation(String methodName, Object[] params, Dictionary<String, Object> config) {
-        return getRolesForInvocation(methodName, params, null, config);
-    }
-
     /**
      * Returns the roles that can invoke the given operation. This is determined by matching the
      * operation details against configuration provided.<p/>
@@ -74,14 +70,12 @@ public class ACLConfigurationParser {
             Dictionary<String, Object> config) {
         Dictionary<String, Object> properties = trimKeys(config);
 
-        if (signature != null) {
-            List<String> roles = getRolesBasedOnSignature(methodName, params, signature, properties);
-            if (roles != null) {
-                return roles;
-            }
+        List<String> roles = getRolesBasedOnSignature(methodName, params, signature, properties);
+        if (roles != null) {
+            return roles;
         }
 
-        List<String> roles = getRolesBasedOnSignature(methodName, params, null, properties);
+        roles = getRolesBasedOnSignature(methodName, params, null, properties);
         if (roles != null) {
             return roles;
         }
