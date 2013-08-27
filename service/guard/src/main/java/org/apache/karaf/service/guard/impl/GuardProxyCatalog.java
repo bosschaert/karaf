@@ -57,6 +57,7 @@ public class GuardProxyCatalog {
     public static final String KARAF_SECURED_SERVICES_SYSPROP = "karaf.secured.services";
     public static final String SERVICE_GUARD_ROLES_PROPERTY = "org.apache.karaf.service.guard.roles";
 
+    static final String PROXY_CREATOR_THREAD_NAME = "Secure OSGi Service Proxy Creator";
     static final String PROXY_MARKER_KEY = "." + GuardProxyCatalog.class.getName();
 
     private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
@@ -89,7 +90,7 @@ public class GuardProxyCatalog {
     }
 
     void close() {
-        runProxyCreator = false;
+        runProxyCreator = false; // TODO interrupt the thread
         proxyManagerTracker.close();
         configAdminTracker.close();
 
@@ -402,17 +403,19 @@ public class GuardProxyCatalog {
     }
 
     class ServiceProxyCreatorCustomizer implements ServiceTrackerCustomizer<ProxyManager, ProxyManager> {
+        private volatile Thread thread = null;
+
         @Override
         public ProxyManager addingService(ServiceReference<ProxyManager> reference) {
             runProxyCreator = true;
             final ProxyManager svc = bundleContext.getService(reference);
-            if (svc != null) {
-                newProxyProducingThread(svc);
+            if (thread == null && svc != null) {
+                thread = newProxyProducingThread(svc);
             }
             return svc;
         }
 
-        private void newProxyProducingThread(final ProxyManager proxyManager) {
+        private Thread newProxyProducingThread(final ProxyManager proxyManager) {
             Thread t = new Thread(new Runnable() {
                 @Override
                 public void run() {
@@ -420,16 +423,22 @@ public class GuardProxyCatalog {
                         try {
                             CreateProxyRunnable proxyCreator = createProxyQueue.take();
                             proxyCreator.run(proxyManager);
+                        } catch (InterruptedException ie) {
+                            // part of normal behaviour
                         } catch (Exception e) {
                             // TODO Log
                             e.printStackTrace();
                         }
                     }
+                    // finished running
+                    thread = null;
                 }
             });
-            t.setName("Secure OSGi Service Proxy Creator");
+            t.setName(PROXY_CREATOR_THREAD_NAME);
             t.setDaemon(true);
             t.start();
+
+            return t;
         }
 
         @Override
@@ -440,6 +449,9 @@ public class GuardProxyCatalog {
         @Override
         public void removedService(ServiceReference<ProxyManager> reference, ProxyManager service) {
             runProxyCreator = false; // Will end the proxy creation thread
+            if (thread != null) {
+                thread.interrupt();
+            }
         }
     }
 

@@ -19,6 +19,7 @@ package org.apache.karaf.service.guard.impl;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -50,6 +51,7 @@ import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
 import org.osgi.framework.InvalidSyntaxException;
+import org.osgi.framework.ServiceEvent;
 import org.osgi.framework.ServiceListener;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.ServiceRegistration;
@@ -59,7 +61,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 
 public class GuardProxyCatalogTest {
     // Some assertions fail when run under a code coverage tool, they are skipped when this is set to true
-    private static final boolean runningUnderCoverage = true; // set to false before committing any changes
+    private static final boolean runningUnderCoverage = false; // set to false before committing any changes
 
     @Test
     public void testGuardProxyCatalog() throws Exception {
@@ -316,6 +318,164 @@ public class GuardProxyCatalogTest {
                 return null;
             }
         });
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testProxyCreationThread() throws Exception {
+        ProxyManager proxyManager = getProxyManager();
+
+        ServiceReference pmSref = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(pmSref);
+        ServiceReference pmSref2 = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(pmSref2);
+
+        BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
+        EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
+            @Override
+            public Filter answer() throws Throwable {
+                return FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
+            }
+        }).anyTimes();
+        final ServiceListener [] pmListenerHolder = new ServiceListener [1];
+        String pmFilter = "(&(objectClass=org.apache.aries.proxy.ProxyManager)(!(.org.apache.karaf.service.guard.impl.GuardProxyCatalog=*)))";
+        bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(pmFilter));
+        EasyMock.expectLastCall().andAnswer(new IAnswer<Object>() {
+            @Override
+            public Object answer() throws Throwable {
+                pmListenerHolder[0] = (ServiceListener) EasyMock.getCurrentArguments()[0];
+                return null;
+            }
+        }).anyTimes();
+        EasyMock.expect(bc.getService(pmSref)).andReturn(proxyManager).anyTimes();
+        EasyMock.expect(bc.getService(pmSref2)).andReturn(proxyManager).anyTimes();
+        EasyMock.replay(bc);
+
+        // This should put a ServiceListener in the pmListenerHolder, the ServiceTracker does that
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+
+        // The service being proxied has these properties
+        final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
+        serviceProps.put(Constants.OBJECTCLASS, new String [] {TestServiceAPI.class.getName()});
+
+        final Map<ServiceReference<?>, Object> serviceMap = new HashMap<ServiceReference<?>, Object>();
+
+        // The mock bundle context for the bundle providing the service is set up here
+        BundleContext providerBC = EasyMock.createMock(BundleContext.class);
+        // These are the expected service properties of the proxy registration. Note the proxy marker...
+        final Hashtable<String, Object> expectedProxyProps = new Hashtable<String, Object>(serviceProps);
+        expectedProxyProps.put(GuardProxyCatalog.PROXY_MARKER_KEY, 999L);
+        EasyMock.expect(providerBC.registerService(
+                EasyMock.isA(String[].class),
+                EasyMock.anyObject(),
+                EasyMock.isA(Dictionary.class))).andAnswer(new IAnswer() {
+                    @Override
+                    public ServiceRegistration answer() throws Throwable {
+                        Dictionary<String,Object> props = (Dictionary<String, Object>) EasyMock.getCurrentArguments()[2];
+                        ServiceRegistration reg = EasyMock.createMock(ServiceRegistration.class);
+                        ServiceReference sr = mockServiceReference(props);
+                        EasyMock.expect(reg.getReference()).andReturn(sr).anyTimes();
+                        reg.unregister();
+                        EasyMock.expectLastCall().once();
+                        EasyMock.replay(reg);
+
+                        serviceMap.put(sr, EasyMock.getCurrentArguments()[1]);
+
+                        return reg;
+                    }
+                }).once();
+        EasyMock.expect(providerBC.getService(EasyMock.isA(ServiceReference.class))).andAnswer(new IAnswer<Object>() {
+            @Override
+            public Object answer() throws Throwable {
+                return serviceMap.get(EasyMock.getCurrentArguments()[0]);
+            }
+        }).anyTimes();
+        EasyMock.replay(providerBC);
+
+        // In some cases the proxy-creating code is looking for a classloader (e.g. when run through
+        // a coverage tool such as EclEmma). This will satisfy that.
+        BundleWiring bw = EasyMock.createMock(BundleWiring.class);
+        EasyMock.expect(bw.getClassLoader()).andReturn(getClass().getClassLoader()).anyTimes();
+        EasyMock.replay(bw);
+
+        // The mock bundle that provides the original service (and also the proxy is registered with this)
+        Bundle providerBundle = EasyMock.createNiceMock(Bundle.class);
+        EasyMock.expect(providerBundle.getBundleContext()).andReturn(providerBC).anyTimes();
+        EasyMock.expect(providerBundle.adapt(BundleWiring.class)).andReturn(bw).anyTimes();
+        EasyMock.replay(providerBundle);
+
+        ServiceReference sr = mockServiceReference(providerBundle, serviceProps);
+
+        // The mock bundle that consumes the service
+        Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(999L).anyTimes();
+        EasyMock.expect(clientBundle.loadClass(TestServiceAPI.class.getName())).andReturn((Class) TestServiceAPI.class).anyTimes();
+        EasyMock.replay(clientBundle);
+
+        // The mock bundle context for the client bundle
+        BundleContext clientBC = EasyMock.createMock(BundleContext.class);
+        EasyMock.expect(clientBC.getBundle()).andReturn(clientBundle).anyTimes();
+        EasyMock.expect(clientBC.getService(sr)).andReturn(new TestService()).anyTimes();
+        EasyMock.replay(clientBC);
+
+        assertEquals("Precondition", 0, gpc.proxyMap.size());
+        assertEquals("Precondition", 0, gpc.createProxyQueue.size());
+        // Create the proxy for the service
+        gpc.proxyIfNotAlreadyProxied(sr, clientBC);
+        assertEquals(1, gpc.proxyMap.size());
+        assertEquals(1, gpc.createProxyQueue.size());
+
+        // The actual proxy creation is done asynchronously.
+        GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new GuardProxyCatalog.ProxyMapKey(sr, clientBC));
+        assertNull("The registration shouldn't have happened yet", holder.registration);
+        assertEquals(1, gpc.createProxyQueue.size());
+
+        Thread[] tarray = new Thread[Thread.activeCount()];
+        Thread.enumerate(tarray);
+        for (Thread t : tarray) {
+            if (t != null) {
+                assertTrue(!GuardProxyCatalog.PROXY_CREATOR_THREAD_NAME.equals(t.getName()));
+            }
+        }
+
+        // make the proxy manager appear
+        pmListenerHolder[0].serviceChanged(new ServiceEvent(ServiceEvent.REGISTERED, pmSref));
+        Thread.sleep(500); // give the system some time to send the events...
+
+        Thread ourThread = null;
+        Thread[] tarray2 = new Thread[Thread.activeCount()];
+        Thread.enumerate(tarray2);
+        for (Thread t : tarray2) {
+            if (t != null) {
+                if (t.getName().equals(GuardProxyCatalog.PROXY_CREATOR_THREAD_NAME)) {
+                    ourThread = t;
+                }
+            }
+        }
+        assertNotNull(ourThread);
+        assertTrue(ourThread.isDaemon());
+        assertTrue(ourThread.isAlive());
+        assertNotNull(holder.registration);
+
+        assertEquals(0, gpc.createProxyQueue.size());
+
+        int numProxyThreads = 0;
+        pmListenerHolder[0].serviceChanged(new ServiceEvent(ServiceEvent.REGISTERED, pmSref2));
+        Thread.sleep(500); // give the system some time to send the events...
+
+        Thread[] tarray3 = new Thread[Thread.activeCount()];
+        Thread.enumerate(tarray3);
+        for (Thread t : tarray3) {
+            if (t != null) {
+                if (t.getName().equals(GuardProxyCatalog.PROXY_CREATOR_THREAD_NAME)) {
+                    numProxyThreads++;
+                }
+            }
+        }
+        assertEquals("Maximum 1 proxy thread, even if there is more than 1 proxy service", 1, numProxyThreads);
+
+        // Clean up thread
+        pmListenerHolder[0].serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, pmSref));
     }
 
     public Dictionary<String, Object> testCreateProxy(Class<?> intf, Object testService) throws Exception {
@@ -664,8 +824,7 @@ public class GuardProxyCatalogTest {
             }
         }).anyTimes();
         String cmFilter = "(&(objectClass=org.osgi.service.cm.ConfigurationAdmin)(!(.org.apache.karaf.service.guard.impl.GuardProxyCatalog=*)))";
-        bc.addServiceListener(EasyMock.isA(ServiceListener.class),
-                EasyMock.eq(cmFilter));
+        bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(cmFilter));
         EasyMock.expectLastCall().anyTimes();
         EasyMock.expect(bc.getServiceReferences(EasyMock.anyObject(String.class), EasyMock.eq(cmFilter))).
             andReturn(new ServiceReference<?> [] {caSR}).anyTimes();
