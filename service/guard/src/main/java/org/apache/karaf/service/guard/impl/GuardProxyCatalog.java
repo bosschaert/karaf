@@ -76,7 +76,11 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
             new ConcurrentHashMap<ProxyMapKey, ServiceRegistrationHolder>();
     final BlockingQueue<CreateProxyRunnable> createProxyQueue = new LinkedBlockingQueue<CreateProxyRunnable>();
+
+    // These two variables control the proxy creator thread, which is started as soon as a ProxyManager Service
+    // becomes available.
     volatile boolean runProxyCreator = true;
+    volatile Thread proxyCreatorThread = null;
 
     GuardProxyCatalog(BundleContext bc) throws Exception {
         bundleContext = bc;
@@ -103,7 +107,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     void close() {
-        runProxyCreator = false; // TODO interrupt the thread
+        stopProxyCreator();
         proxyManagerTracker.close();
         configAdminTracker.close();
 
@@ -359,6 +363,9 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     // as there can be different roles for different methos and also roles based on arguments passed in.
     private List<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
         List<String> allRoles = new ArrayList<String>();
+
+        // This can probably be optimized. Maybe we can cache the config object relevant instead of
+        // walking through all of the ones that have 'service.guard'.
         for (Configuration config : getServiceGuardConfigs()) {
             Object guardFilter = config.getProperties().get("service.guard");
             if (guardFilter instanceof String) {
@@ -396,7 +403,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return new Configuration [] {};
         }
 
-        // TODO optimize!! This can be expensive!
         Configuration[] configs = ca.listConfigurations("(service.guard=*)");
         if (configs == null) {
             return new Configuration [] {};
@@ -406,6 +412,13 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     private boolean isValidMethodName(String name) {
         return JAVA_CLASS_NAME_PART_PATTERN.matcher(name).matches();
+    }
+
+    void stopProxyCreator() {
+        runProxyCreator = false; // Will end the proxy creation thread
+        if (proxyCreatorThread != null) {
+            proxyCreatorThread.interrupt();
+        }
     }
 
     static class ServiceRegistrationHolder {
@@ -481,6 +494,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 sig[i] = m.getParameterTypes()[i].getName();
             }
 
+            // This can probably be optimized. Maybe we can cache the config object relevant instead of
+            // walking through all of the ones that have 'service.guard'.
             for (Configuration config : configs) {
                 Object guardFilter = config.getProperties().get("service.guard");
                 if (guardFilter instanceof String) {
@@ -545,14 +560,12 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     class ServiceProxyCreatorCustomizer implements ServiceTrackerCustomizer<ProxyManager, ProxyManager> {
-        private volatile Thread thread = null;
-
         @Override
         public ProxyManager addingService(ServiceReference<ProxyManager> reference) {
             runProxyCreator = true;
             final ProxyManager svc = bundleContext.getService(reference);
-            if (thread == null && svc != null) {
-                thread = newProxyProducingThread(svc);
+            if (proxyCreatorThread == null && svc != null) {
+                proxyCreatorThread = newProxyProducingThread(svc);
             }
             return svc;
         }
@@ -573,7 +586,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                         }
                     }
                     // finished running
-                    thread = null;
+                    proxyCreatorThread = null;
                 }
             });
             t.setName(PROXY_CREATOR_THREAD_NAME);
@@ -590,10 +603,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
         @Override
         public void removedService(ServiceReference<ProxyManager> reference, ProxyManager service) {
-            runProxyCreator = false; // Will end the proxy creation thread
-            if (thread != null) {
-                thread.interrupt();
-            }
+            stopProxyCreator();
         }
     }
 
