@@ -22,6 +22,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -42,6 +43,7 @@ import javax.security.auth.Subject;
 import org.apache.aries.proxy.ProxyManager;
 import org.apache.aries.proxy.impl.AsmProxyManager;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
+import org.apache.karaf.service.guard.impl.GuardProxyCatalog.CreateProxyRunnable;
 import org.apache.karaf.service.guard.impl.GuardProxyCatalog.ProxyMapKey;
 import org.apache.karaf.service.guard.impl.GuardProxyCatalog.ServiceRegistrationHolder;
 import org.easymock.EasyMock;
@@ -126,7 +128,8 @@ public class GuardProxyCatalogTest {
         BundleContext client2BC = mockBundleContext(mockBundle(6));
 
         Hashtable<String, Object> props = new Hashtable<String, Object>();
-        props.put(Constants.SERVICE_ID, new Long(12345678901234L));
+        long originalServiceID = 12345678901234L;
+        props.put(Constants.SERVICE_ID, new Long(originalServiceID));
         props.put("foo", "bar");
         ServiceReference<?> originalRef = mockServiceReference(props);
 
@@ -153,8 +156,13 @@ public class GuardProxyCatalogTest {
         gpc.proxyMap.put(new ProxyMapKey(anotherRef, clientBC), srh2);
         assertEquals("Precondition", 3, gpc.proxyMap.size());
 
+        gpc.createProxyQueue.put(new MockCreateProxyRunnable(originalServiceID));
+        gpc.createProxyQueue.put(new MockCreateProxyRunnable(777));
+        assertEquals("Precondition", 2, gpc.createProxyQueue.size());
+
         gpc.serviceChanged(new ServiceEvent(ServiceEvent.REGISTERED, originalRef));
         assertEquals("Registered events should be ignored", 3, gpc.proxyMap.size());
+        assertEquals("Registered events should be ignored", 2, gpc.createProxyQueue.size());
 
         Hashtable<String, Object> proxyProps = new Hashtable<String, Object>(props);
         proxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
@@ -162,9 +170,13 @@ public class GuardProxyCatalogTest {
         ServiceReference<?> proxyRef = mockServiceReference(proxyProps);
         gpc.serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, proxyRef));
         assertEquals("Unregistering the proxy should be ignored by the listener", 3, gpc.proxyMap.size());
+        assertEquals("Unregistering the proxy should be ignored by the listener", 2, gpc.createProxyQueue.size());
 
         gpc.serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, originalRef));
         assertEquals("The two proxies for this service should have been removed", 1, gpc.proxyMap.size());
+        assertSame(anotherRef, gpc.proxyMap.keySet().iterator().next().serviceReference);
+        assertEquals("The create proxy job for this service should have been removed", 1, gpc.createProxyQueue.size());
+        assertEquals(777, gpc.createProxyQueue.iterator().next().getOriginalServiceID());
 
         EasyMock.verify(proxyReg);
         EasyMock.verify(proxy2Reg);
@@ -968,6 +980,22 @@ public class GuardProxyCatalogTest {
         }
         EasyMock.replay(sr);
         return sr;
+    }
+
+    class MockCreateProxyRunnable implements CreateProxyRunnable {
+        private final long orgServiceID;
+
+        public MockCreateProxyRunnable(long serviceID) {
+            orgServiceID = serviceID;
+        }
+
+        @Override
+        public long getOriginalServiceID() {
+            return orgServiceID;
+        }
+
+        @Override
+        public void run(ProxyManager pm) throws Exception {}
     }
 
     public interface TestServiceAPI {

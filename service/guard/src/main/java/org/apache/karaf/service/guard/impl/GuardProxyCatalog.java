@@ -338,8 +338,8 @@ public class GuardProxyCatalog implements ServiceListener {
      * can cause each client to get a separate service instance.
      */
     static class ProxyMapKey {
-        private final ServiceReference<?> serviceReference;
-        private final long clientBundleID;
+        final ServiceReference<?> serviceReference;
+        final long clientBundleID;
 
         ProxyMapKey(ServiceReference<?> sr, BundleContext clientBC) {
             serviceReference = sr;
