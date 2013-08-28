@@ -61,7 +61,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 
 public class GuardProxyCatalogTest {
     // Some assertions fail when run under a code coverage tool, they are skipped when this is set to true
-    private static final boolean runningUnderCoverage = true; // set to false before committing any changes
+    private static final boolean runningUnderCoverage = false; // set to false before committing any changes
 
     @Test
     public void testGuardProxyCatalog() throws Exception {

@@ -16,6 +16,7 @@
  */
 package org.apache.karaf.service.guard.impl;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.security.AccessControlContext;
@@ -217,20 +218,8 @@ public class GuardProxyCatalog {
     // Returns what roles can possibly ever invoke this service. Note that not every invocation may be successful
     // as there can be different roles for different methos and also roles based on arguments passed in.
     private List<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
-        // TODO very similar to what happens in the ProxyInvocationListener
-        ConfigurationAdmin ca = configAdminTracker.getService();
-        if (ca == null) {
-            return null;
-        }
-
-        // TODO optimize!! This can be expensive!
-        Configuration[] configs = ca.listConfigurations("(service.guard=*)");
-        if (configs == null || configs.length == 0) {
-            return null;
-        }
-
         List<String> allRoles = new ArrayList<String>();
-        for (Configuration config : configs) {
+        for (Configuration config : getServiceGuardConfigs()) {
             Object guardFilter = config.getProperties().get("service.guard");
             if (guardFilter instanceof String) {
                 Filter filter = bundleContext.createFilter((String) guardFilter);
@@ -258,6 +247,21 @@ public class GuardProxyCatalog {
             }
         }
         return allRoles;
+    }
+
+    // Ensures that it never returns null
+    private Configuration[] getServiceGuardConfigs() throws IOException, InvalidSyntaxException {
+        ConfigurationAdmin ca = configAdminTracker.getService();
+        if (ca == null) {
+            return new Configuration [] {};
+        }
+
+        // TODO optimize!! This can be expensive!
+        Configuration[] configs = ca.listConfigurations("(service.guard=*)");
+        if (configs == null) {
+            return new Configuration [] {};
+        }
+        return configs;
     }
 
     private boolean isValidMethodName(String name) {
@@ -318,14 +322,8 @@ public class GuardProxyCatalog {
 
         @Override
         public Object preInvoke(Object proxy, Method m, Object[] args) throws Throwable {
-            ConfigurationAdmin ca = configAdminTracker.getService();
-            if (ca == null) {
-                return null;
-            }
-
-            // TODO optimize!! This can be expensive!
-            Configuration[] configs = ca.listConfigurations("(service.guard=*)");
-            if (configs == null || configs.length == 0) {
+            Configuration[] configs = getServiceGuardConfigs();
+            if (configs.length == 0) {
                 return null;
             }
 
