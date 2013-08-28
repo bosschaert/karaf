@@ -44,7 +44,10 @@ import org.apache.aries.proxy.InvocationListener;
 import org.apache.aries.proxy.ProxyManager;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.apache.karaf.service.guard.tools.ACLConfigurationParser;
+import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
+import org.osgi.framework.BundleEvent;
+import org.osgi.framework.BundleListener;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
@@ -57,7 +60,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.util.tracker.ServiceTracker;
 import org.osgi.util.tracker.ServiceTrackerCustomizer;
 
-public class GuardProxyCatalog implements ServiceListener {
+public class GuardProxyCatalog implements ServiceListener, BundleListener {
     public static final String KARAF_SECURED_SERVICES_SYSPROP = "karaf.secured.services";
     public static final String SERVICE_GUARD_ROLES_PROPERTY = "org.apache.karaf.service.guard.roles";
 
@@ -78,7 +81,10 @@ public class GuardProxyCatalog implements ServiceListener {
     GuardProxyCatalog(BundleContext bc) throws Exception {
         bundleContext = bc;
 
-        bc.addServiceListener(this);
+        // The service listener is used to update/unregister proxies if the backing service changes/goes away
+        bc.addServiceListener(this); // TODO test
+        // The bundle listener is used to unregister proxies for client that go away
+        bc.addBundleListener(this); // TODO test
 
         Filter caFilter = getNonProxyFilter(bc, ConfigurationAdmin.class);
         configAdminTracker = new ServiceTracker<ConfigurationAdmin, ConfigurationAdmin>(bc, caFilter, null);
@@ -101,9 +107,12 @@ public class GuardProxyCatalog implements ServiceListener {
         proxyManagerTracker.close();
         configAdminTracker.close();
 
+        bundleContext.removeBundleListener(this); //TODO test
+        bundleContext.removeServiceListener(this);
+
         // Remove all proxy registrations
-        for (ServiceRegistrationHolder srh : proxyMap.values()) {
-            srh.registration.unregister();
+        for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
+            unregisterProxy(i.next());
         }
     }
 
@@ -132,8 +141,6 @@ public class GuardProxyCatalog implements ServiceListener {
             handleOriginalServiceModifed(sr);
         }
     }
-    // TODO do the above for bundles too, only when the client bundle unregisters. When the provider bundle unregisters
-    // we don't need to do anything
 
     private void handleOriginalServiceUnregistering(long orgServiceID) {
         for (Iterator<CreateProxyRunnable> i = createProxyQueue.iterator(); i.hasNext(); ) {
@@ -146,11 +153,8 @@ public class GuardProxyCatalog implements ServiceListener {
         for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
             Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry = i.next();
             if (entry.getKey().serviceReference.getProperty(Constants.SERVICE_ID).equals(orgServiceID)) {
-                ServiceRegistration<?> reg = entry.getValue().registration;
-                if (reg != null) {
-                    reg.unregister();
-                }
                 i.remove();
+                unregisterProxy(entry);
             }
         }
     }
@@ -167,10 +171,41 @@ public class GuardProxyCatalog implements ServiceListener {
                     // Preserve the roles as they are expensive to compute
                     Object roles = reg.getReference().getProperty(SERVICE_GUARD_ROLES_PROPERTY);
                     Dictionary<String, Object> newProxyProps = proxyProperties(
-                            orgServiceRef, entry.getKey().clientBundleID, (Long) orgServiceRef.getProperty(Constants.SERVICE_ID));
+                            orgServiceRef, entry.getKey().clientBundleContext.getBundle().getBundleId(),
+                            (Long) orgServiceRef.getProperty(Constants.SERVICE_ID));
                     newProxyProps.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
                     reg.setProperties(newProxyProps);
                 }
+            }
+        }
+    }
+
+    @Override
+    public void bundleChanged(BundleEvent event) {
+        if (event.getType() != BundleEvent.STOPPING) {
+            return;
+        }
+
+        Bundle stoppingBundle = event.getBundle();
+        long stoppingBundleID = stoppingBundle.getBundleId();
+        BundleContext stoppingBC = stoppingBundle.getBundleContext();
+        if (stoppingBC.equals(bundleContext) || stoppingBundleID == 0) {
+            // Don't react to this bundle stopping or the system bundle
+            return;
+        }
+
+        for (Iterator<CreateProxyRunnable> i = createProxyQueue.iterator(); i.hasNext(); ) {
+            CreateProxyRunnable cpr = i.next();
+            if (stoppingBC.equals(cpr.getClientBundleContext())) {
+                i.remove();
+            }
+        }
+
+        for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
+            Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry = i.next();
+            if (stoppingBC.equals(entry.getKey().clientBundleContext)) {
+                i.remove();
+                unregisterProxy(entry);
             }
         }
     }
@@ -208,6 +243,11 @@ public class GuardProxyCatalog implements ServiceListener {
         //  2. it also means that we can better react to the fact that the ProxyManager service might arrive
         //     later. As soon as the Proxy Manager is available, the queue is emptied and the proxies created.
         CreateProxyRunnable cpr = new CreateProxyRunnable() {
+            @Override
+            public BundleContext getClientBundleContext() {
+                return clientBC;
+            }
+
             @Override
             public long getOriginalServiceID() {
                 return orgServiceID;
@@ -285,6 +325,18 @@ public class GuardProxyCatalog implements ServiceListener {
             }
         };
         createProxyQueue.put(cpr);
+    }
+
+    private static void unregisterProxy(Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry) {
+        ProxyMapKey pmk = entry.getKey();
+
+        // The following line is needed because we call clientBC.getService() when the proxy is created
+        pmk.clientBundleContext.ungetService(pmk.serviceReference);
+
+        ServiceRegistration<?> reg = entry.getValue().registration;
+        if (reg != null) {
+            reg.unregister();
+        }
     }
 
     private static Dictionary<String, Object> proxyProperties(ServiceReference<?> sr, Long clientBundleID, Long orgServiceID) {
@@ -366,18 +418,19 @@ public class GuardProxyCatalog implements ServiceListener {
      */
     static class ProxyMapKey {
         final ServiceReference<?> serviceReference;
-        final long clientBundleID;
+        final BundleContext clientBundleContext;
 
         ProxyMapKey(ServiceReference<?> sr, BundleContext clientBC) {
             serviceReference = sr;
-            clientBundleID = clientBC.getBundle().getBundleId();
+            clientBundleContext = clientBC;
         }
 
         @Override
         public int hashCode() {
+            final int prime = 31;
             int result = 1;
-            result = 31 * result + (int) (clientBundleID ^ (clientBundleID >>> 32));
-            result = 31 * result + ((serviceReference == null) ? 0 : serviceReference.hashCode());
+            result = prime * result + ((clientBundleContext == null) ? 0 : clientBundleContext.hashCode());
+            result = prime * result + ((serviceReference == null) ? 0 : serviceReference.hashCode());
             return result;
         }
 
@@ -390,7 +443,10 @@ public class GuardProxyCatalog implements ServiceListener {
             if (getClass() != obj.getClass())
                 return false;
             ProxyMapKey other = (ProxyMapKey) obj;
-            if (clientBundleID != other.clientBundleID)
+            if (clientBundleContext == null) {
+                if (other.clientBundleContext != null)
+                    return false;
+            } else if (!clientBundleContext.equals(other.clientBundleContext))
                 return false;
             if (serviceReference == null) {
                 if (other.serviceReference != null)
@@ -543,6 +599,7 @@ public class GuardProxyCatalog implements ServiceListener {
 
     interface CreateProxyRunnable {
         long getOriginalServiceID();
+        BundleContext getClientBundleContext();
         void run(ProxyManager pm) throws Exception;
     }
 }

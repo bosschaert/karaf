@@ -52,6 +52,7 @@ import org.easymock.IAnswer;
 import org.junit.Test;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
+import org.osgi.framework.BundleEvent;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
@@ -66,7 +67,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 
 public class GuardProxyCatalogTest {
     // Some assertions fail when run under a code coverage tool, they are skipped when this is set to true
-    private static final boolean runningUnderCoverage = false; // set to false before committing any changes
+    private static final boolean runningUnderCoverage = true; // set to false before committing any changes
 
     @Test
     public void testGuardProxyCatalog() throws Exception {
@@ -83,9 +84,13 @@ public class GuardProxyCatalogTest {
         assertTrue("Service Tracker for ConfigAdmin should be opened", gpc.configAdminTracker.getTrackingCount() != -1);
         assertTrue("Service Tracker for ProxyManager should be opened", gpc.proxyManagerTracker.getTrackingCount() != -1);
 
+        EasyMock.verify(bc);
+
         gpc.close();
         assertEquals("Service Tracker for ConfigAdmin should be closed", -1, gpc.configAdminTracker.getTrackingCount());
         assertEquals("Service Tracker for ProxyManager should be closed", -1, gpc.proxyManagerTracker.getTrackingCount());
+
+
     }
 
     @Test
@@ -125,8 +130,8 @@ public class GuardProxyCatalogTest {
 
     @Test
     public void testHandleServiceUnregistering() throws Exception {
-        BundleContext clientBC = mockBundleContext(mockBundle(12345));
-        BundleContext client2BC = mockBundleContext(mockBundle(6));
+        BundleContext clientBC = openStrictMockBundleContext(mockBundle(12345));
+        BundleContext client2BC = openStrictMockBundleContext(mockBundle(6));
 
         Hashtable<String, Object> props = new Hashtable<String, Object>();
         long originalServiceID = 12345678901234L;
@@ -137,6 +142,11 @@ public class GuardProxyCatalogTest {
         Hashtable<String, Object> props2 = new Hashtable<String, Object>();
         props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
         ServiceReference<?> anotherRef = mockServiceReference(props2);
+
+        EasyMock.expect(clientBC.ungetService(originalRef)).andReturn(false).once();
+        EasyMock.replay(clientBC);
+        EasyMock.expect(client2BC.ungetService(originalRef)).andReturn(false).once();
+        EasyMock.replay(client2BC);
 
         GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
 
@@ -181,6 +191,77 @@ public class GuardProxyCatalogTest {
 
         EasyMock.verify(proxyReg);
         EasyMock.verify(proxy2Reg);
+        EasyMock.verify(clientBC);
+        EasyMock.verify(client2BC);
+    }
+
+    @Test
+    public void testHandleClientBundleStopping() throws Exception {
+        Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(12345L).anyTimes();
+        BundleContext clientBC = openStrictMockBundleContext(clientBundle);
+        EasyMock.expect(clientBundle.getBundleContext()).andReturn(clientBC).anyTimes();
+        EasyMock.replay(clientBundle);
+
+        Bundle client2Bundle = EasyMock.createNiceMock(Bundle.class);
+        EasyMock.expect(client2Bundle.getBundleId()).andReturn(6L).anyTimes();
+        BundleContext client2BC = openStrictMockBundleContext(client2Bundle);
+        EasyMock.expect(client2Bundle.getBundleContext()).andReturn(client2BC).anyTimes();
+        EasyMock.replay(client2Bundle);
+
+        Hashtable<String, Object> props = new Hashtable<String, Object>();
+        long originalServiceID = 12345678901234L;
+        props.put(Constants.SERVICE_ID, new Long(originalServiceID));
+        ServiceReference<?> originalRef = mockServiceReference(props);
+
+        Hashtable<String, Object> props2 = new Hashtable<String, Object>();
+        props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
+        ServiceReference<?> anotherRef = mockServiceReference(props2);
+
+        EasyMock.expect(clientBC.ungetService(originalRef)).andReturn(false).once();
+        EasyMock.expect(clientBC.ungetService(anotherRef)).andReturn(false).once();
+        EasyMock.replay(clientBC);
+        EasyMock.replay(client2BC);
+
+        GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
+
+        ServiceRegistration<?> proxyReg = EasyMock.createMock(ServiceRegistration.class);
+        proxyReg.unregister();
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(proxyReg);
+        ServiceRegistrationHolder srh = new GuardProxyCatalog.ServiceRegistrationHolder();
+        srh.registration = proxyReg;
+
+        ServiceRegistration<?> proxy2Reg = EasyMock.createMock(ServiceRegistration.class);
+        proxy2Reg.unregister();
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(proxy2Reg);
+        ServiceRegistrationHolder srh2 = new GuardProxyCatalog.ServiceRegistrationHolder();
+        srh2.registration = proxy2Reg;
+
+        gpc.proxyMap.put(new ProxyMapKey(originalRef, clientBC), srh);
+        gpc.proxyMap.put(new ProxyMapKey(originalRef, client2BC), new GuardProxyCatalog.ServiceRegistrationHolder());
+        gpc.proxyMap.put(new ProxyMapKey(anotherRef, clientBC), srh2);
+        assertEquals("Precondition", 3, gpc.proxyMap.size());
+
+        gpc.createProxyQueue.put(new MockCreateProxyRunnable(clientBC));
+        gpc.createProxyQueue.put(new MockCreateProxyRunnable(client2BC));
+        assertEquals("Precondition", 2, gpc.createProxyQueue.size());
+
+        gpc.bundleChanged(new BundleEvent(BundleEvent.STARTED, clientBundle));
+        assertEquals("Non-STOPPING events should be ignored", 3, gpc.proxyMap.size());
+        assertEquals("Non-STOPPING events should be ignored", 2, gpc.createProxyQueue.size());
+
+        gpc.bundleChanged(new BundleEvent(BundleEvent.STOPPING, clientBundle));
+        assertEquals(1, gpc.proxyMap.size());
+        assertSame(client2BC, gpc.proxyMap.keySet().iterator().next().clientBundleContext);
+        assertEquals(1, gpc.createProxyQueue.size());
+        assertSame(client2BC, gpc.createProxyQueue.iterator().next().getClientBundleContext());
+
+        EasyMock.verify(proxyReg);
+        EasyMock.verify(proxy2Reg);
+        EasyMock.verify(clientBC);
+        EasyMock.verify(client2BC);
     }
 
     @Test
@@ -805,7 +886,8 @@ public class GuardProxyCatalogTest {
         // The mock bundle context for the client bundle
         BundleContext clientBC = EasyMock.createMock(BundleContext.class);
         EasyMock.expect(clientBC.getBundle()).andReturn(clientBundle).anyTimes();
-        EasyMock.expect(clientBC.getService(sr)).andReturn(testService).anyTimes();
+        EasyMock.expect(clientBC.getService(sr)).andReturn(testService).once();
+        EasyMock.expect(clientBC.ungetService(sr)).andReturn(true).once();
         EasyMock.replay(clientBC);
 
         assertEquals("Precondition", 0, gpc.proxyMap.size());
@@ -856,6 +938,7 @@ public class GuardProxyCatalogTest {
 
         gpc.close();
         EasyMock.verify(holder.registration); // checks that the unregister call was made
+        EasyMock.verify(clientBC); // checks that ungetService() is called
 
         return proxyProps;
     }
@@ -1055,6 +1138,20 @@ public class GuardProxyCatalogTest {
         return bc;
     }
 
+    private BundleContext openStrictMockBundleContext(Bundle b) throws InvalidSyntaxException {
+        BundleContext bc = EasyMock.createMock(BundleContext.class);
+        EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
+            @Override
+            public Filter answer() throws Throwable {
+                return FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
+            }
+        }).anyTimes();
+        if (b != null) {
+            EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
+        }
+        return bc;
+    }
+
     @SuppressWarnings({ "rawtypes", "unchecked" })
     private BundleContext mockConfigAdminBundleContext(Dictionary<String, Object> ... configs) throws IOException,
             InvalidSyntaxException {
@@ -1129,9 +1226,21 @@ public class GuardProxyCatalogTest {
 
     class MockCreateProxyRunnable implements CreateProxyRunnable {
         private final long orgServiceID;
+        private final BundleContext clientBundleContext;
 
         public MockCreateProxyRunnable(long serviceID) {
             orgServiceID = serviceID;
+            clientBundleContext = null;
+        }
+
+        public MockCreateProxyRunnable(BundleContext clientBC) {
+            orgServiceID = -1;
+            clientBundleContext = clientBC;
+        }
+
+        @Override
+        public BundleContext getClientBundleContext() {
+            return clientBundleContext;
         }
 
         @Override
