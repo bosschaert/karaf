@@ -61,7 +61,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 
 public class GuardProxyCatalogTest {
     // Some assertions fail when run under a code coverage tool, they are skipped when this is set to true
-    private static final boolean runningUnderCoverage = false; // set to false before committing any changes
+    private static final boolean runningUnderCoverage = true; // set to false before committing any changes
 
     @Test
     public void testGuardProxyCatalog() throws Exception {
@@ -320,6 +320,30 @@ public class GuardProxyCatalogTest {
         });
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testInvocationBlocking4() throws Exception {
+        BundleContext bc = mockConfigAdminBundleContext();
+
+        final Object proxy = testCreateProxy(bc, new Class [] {TestServiceAPI.class, TestObjectWithoutInterface.class}, new CombinedTestService());
+
+        // Run with the right credentials so we can test the expected roles
+        Subject subject = new Subject();
+        subject.getPrincipals().add(new RolePrincipal("b"));
+        Subject.doAs(subject, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                assertEquals("Doing it", ((TestServiceAPI) proxy).doit());
+                if (!runningUnderCoverage) {
+                    assertEquals(42L, ((TestObjectWithoutInterface) proxy).compute(-42L));
+                    assertEquals(-44L, ((TestObjectWithoutInterface) proxy).compute(44L));
+                }
+
+                return null;
+            }
+        });
+    }
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
     @Test
     public void testProxyCreationThread() throws Exception {
@@ -440,7 +464,7 @@ public class GuardProxyCatalogTest {
 
         // make the proxy manager appear
         pmListenerHolder[0].serviceChanged(new ServiceEvent(ServiceEvent.REGISTERED, pmSref));
-        Thread.sleep(500); // give the system some time to send the events...
+        Thread.sleep(400); // give the system some time to send the events...
 
         Thread ourThread = null;
         Thread[] tarray2 = new Thread[Thread.activeCount()];
@@ -461,7 +485,7 @@ public class GuardProxyCatalogTest {
 
         int numProxyThreads = 0;
         pmListenerHolder[0].serviceChanged(new ServiceEvent(ServiceEvent.REGISTERED, pmSref2));
-        Thread.sleep(500); // give the system some time to send the events...
+        Thread.sleep(300); // give the system some time to send the events...
 
         Thread[] tarray3 = new Thread[Thread.activeCount()];
         Thread.enumerate(tarray3);
@@ -476,6 +500,14 @@ public class GuardProxyCatalogTest {
 
         // Clean up thread
         pmListenerHolder[0].serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, pmSref));
+        Thread.sleep(300); // Give the system some time to stop the threads...
+        Thread[] tarray4 = new Thread[Thread.activeCount()];
+        Thread.enumerate(tarray4);
+        for (Thread t : tarray4) {
+            if (t != null) {
+                assertTrue(!GuardProxyCatalog.PROXY_CREATOR_THREAD_NAME.equals(t.getName()));
+            }
+        }
     }
 
     public Dictionary<String, Object> testCreateProxy(Class<?> intf, Object testService) throws Exception {
