@@ -42,6 +42,8 @@ import javax.security.auth.Subject;
 import org.apache.aries.proxy.ProxyManager;
 import org.apache.aries.proxy.impl.AsmProxyManager;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
+import org.apache.karaf.service.guard.impl.GuardProxyCatalog.ProxyMapKey;
+import org.apache.karaf.service.guard.impl.GuardProxyCatalog.ServiceRegistrationHolder;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
 import org.junit.Test;
@@ -67,10 +69,10 @@ public class GuardProxyCatalogTest {
     public void testGuardProxyCatalog() throws Exception {
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
         String caFilter = "(&(objectClass=org.osgi.service.cm.ConfigurationAdmin)"
-                + "(!(" + GuardProxyCatalog.PROXY_MARKER_KEY + "=*)))";
+                + "(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*)))";
         EasyMock.expect(bc.createFilter(caFilter)).andReturn(FrameworkUtil.createFilter(caFilter)).anyTimes();
         String pmFilter = "(&(objectClass=org.apache.aries.proxy.ProxyManager)"
-                + "(!(" + GuardProxyCatalog.PROXY_MARKER_KEY + "=*)))";
+                + "(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*)))";
         EasyMock.expect(bc.createFilter(pmFilter)).andReturn(FrameworkUtil.createFilter(pmFilter)).anyTimes();
         EasyMock.replay(bc);
 
@@ -90,7 +92,7 @@ public class GuardProxyCatalogTest {
         GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
 
         Dictionary<String, Object> props = new Hashtable<String, Object>();
-        props.put(GuardProxyCatalog.PROXY_MARKER_KEY, 12L);
+        props.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 12L);
         assertTrue(gpc.isProxy(mockServiceReference(props)));
         assertFalse(gpc.isProxy(mockServiceReference(new Hashtable<String, Object>())));
     }
@@ -110,12 +112,62 @@ public class GuardProxyCatalogTest {
         EasyMock.replay(testBC);
 
         Dictionary<String, Object> props1 = new Hashtable<String, Object>();
-        props1.put(GuardProxyCatalog.PROXY_MARKER_KEY, 42L);
+        props1.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 42L);
         assertTrue(gpc.isProxyFor(mockServiceReference(props1), testBC));
         Dictionary<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(GuardProxyCatalog.PROXY_MARKER_KEY, 43L);
+        props2.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 43L);
         assertFalse(gpc.isProxyFor(mockServiceReference(props2), testBC));
         assertFalse(gpc.isProxyFor(mockServiceReference(new Hashtable<String, Object>()), testBC));
+    }
+
+    @Test
+    public void testHandleServiceUnregistering() throws Exception {
+        BundleContext clientBC = mockBundleContext(mockBundle(12345));
+        BundleContext client2BC = mockBundleContext(mockBundle(6));
+
+        Hashtable<String, Object> props = new Hashtable<String, Object>();
+        props.put(Constants.SERVICE_ID, new Long(12345678901234L));
+        props.put("foo", "bar");
+        ServiceReference<?> originalRef = mockServiceReference(props);
+
+        Hashtable<String, Object> props2 = new Hashtable<String, Object>();
+        props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
+        ServiceReference<?> anotherRef = mockServiceReference(props2);
+
+        GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
+
+        ServiceRegistration<?> proxyReg = EasyMock.createMock(ServiceRegistration.class);
+        proxyReg.unregister();
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(proxyReg);
+        ServiceRegistrationHolder srh = new GuardProxyCatalog.ServiceRegistrationHolder();
+        srh.registration = proxyReg;
+
+        ServiceRegistration<?> proxy2Reg = EasyMock.createMock(ServiceRegistration.class);
+        EasyMock.replay(proxy2Reg);
+        ServiceRegistrationHolder srh2 = new GuardProxyCatalog.ServiceRegistrationHolder();
+        srh2.registration = proxy2Reg;
+
+        gpc.proxyMap.put(new ProxyMapKey(originalRef, clientBC), srh);
+        gpc.proxyMap.put(new ProxyMapKey(originalRef, client2BC), new GuardProxyCatalog.ServiceRegistrationHolder());
+        gpc.proxyMap.put(new ProxyMapKey(anotherRef, clientBC), srh2);
+        assertEquals("Precondition", 3, gpc.proxyMap.size());
+
+        gpc.serviceChanged(new ServiceEvent(ServiceEvent.REGISTERED, originalRef));
+        assertEquals("Registered events should be ignored", 3, gpc.proxyMap.size());
+
+        Hashtable<String, Object> proxyProps = new Hashtable<String, Object>(props);
+        proxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
+        proxyProps.put(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY, 888L);
+        ServiceReference<?> proxyRef = mockServiceReference(proxyProps);
+        gpc.serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, proxyRef));
+        assertEquals("Unregistering the proxy should be ignored by the listener", 3, gpc.proxyMap.size());
+
+        gpc.serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, originalRef));
+        assertEquals("The two proxies for this service should have been removed", 1, gpc.proxyMap.size());
+
+        EasyMock.verify(proxyReg);
+        EasyMock.verify(proxy2Reg);
     }
 
     @Test
@@ -158,7 +210,7 @@ public class GuardProxyCatalogTest {
         assertEquals("Precondition", 0, gpc.proxyMap.size());
 
         Dictionary<String, Object> props = new Hashtable<String, Object>();
-        props.put(GuardProxyCatalog.PROXY_MARKER_KEY, 123l);
+        props.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 123l);
         ServiceReference<?> sr = mockServiceReference(props);
 
         BundleContext clientBC = EasyMock.createMock(BundleContext.class);
@@ -388,7 +440,7 @@ public class GuardProxyCatalogTest {
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
         // These are the expected service properties of the proxy registration. Note the proxy marker...
         final Hashtable<String, Object> expectedProxyProps = new Hashtable<String, Object>(serviceProps);
-        expectedProxyProps.put(GuardProxyCatalog.PROXY_MARKER_KEY, 999L);
+        expectedProxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
         EasyMock.expect(providerBC.registerService(
                 EasyMock.isA(String[].class),
                 EasyMock.anyObject(),
@@ -538,7 +590,7 @@ public class GuardProxyCatalogTest {
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
         // These are the expected service properties of the proxy registration. Note the proxy marker...
         final Hashtable<String, Object> expectedProxyProps = new Hashtable<String, Object>(serviceProps);
-        expectedProxyProps.put(GuardProxyCatalog.PROXY_MARKER_KEY, 999L);
+        expectedProxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
         // This will check that the right proxy is being registered.
         EasyMock.expect(providerBC.registerService(
                 EasyMock.isA(String[].class),
@@ -694,7 +746,7 @@ public class GuardProxyCatalogTest {
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
         // These are the expected service properties of the proxy registration. Note the proxy marker...
         final Hashtable<String, Object> expectedProxyProps = new Hashtable<String, Object>(serviceProps);
-        expectedProxyProps.put(GuardProxyCatalog.PROXY_MARKER_KEY, 999L);
+        expectedProxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
         // This will check that the right proxy is being registered.
         EasyMock.expect(providerBC.registerService(
                 EasyMock.isA(String[].class),
@@ -815,7 +867,18 @@ public class GuardProxyCatalogTest {
         return dict;
     }
 
+    private Bundle mockBundle(long id) {
+        Bundle bundle = EasyMock.createNiceMock(Bundle.class);
+        EasyMock.expect(bundle.getBundleId()).andReturn(id).anyTimes();
+        EasyMock.replay(bundle);
+        return bundle;
+    }
+
     private BundleContext mockBundleContext() throws InvalidSyntaxException {
+        return mockBundleContext(null);
+    }
+
+    private BundleContext mockBundleContext(Bundle b) throws InvalidSyntaxException {
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
         EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
             @Override
@@ -823,6 +886,9 @@ public class GuardProxyCatalogTest {
                 return FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
             }
         }).anyTimes();
+        if (b != null) {
+            EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
+        }
         EasyMock.replay(bc);
         return bc;
     }
