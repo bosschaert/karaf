@@ -82,9 +82,9 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         bundleContext = bc;
 
         // The service listener is used to update/unregister proxies if the backing service changes/goes away
-        bc.addServiceListener(this); // TODO test
+        bc.addServiceListener(this);
         // The bundle listener is used to unregister proxies for client that go away
-        bc.addBundleListener(this); // TODO test
+        bc.addBundleListener(this);
 
         Filter caFilter = getNonProxyFilter(bc, ConfigurationAdmin.class);
         configAdminTracker = new ServiceTracker<ConfigurationAdmin, ConfigurationAdmin>(bc, caFilter, null);
@@ -107,7 +107,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         proxyManagerTracker.close();
         configAdminTracker.close();
 
-        bundleContext.removeBundleListener(this); //TODO test
+        bundleContext.removeBundleListener(this);
         bundleContext.removeServiceListener(this);
 
         // Remove all proxy registrations

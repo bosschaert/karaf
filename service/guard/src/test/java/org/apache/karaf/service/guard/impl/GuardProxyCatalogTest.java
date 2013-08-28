@@ -53,6 +53,7 @@ import org.junit.Test;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.BundleEvent;
+import org.osgi.framework.BundleListener;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
@@ -72,6 +73,10 @@ public class GuardProxyCatalogTest {
     @Test
     public void testGuardProxyCatalog() throws Exception {
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
+        bc.addServiceListener(EasyMock.isA(ServiceListener.class));
+        EasyMock.expectLastCall().once();
+        bc.addBundleListener(EasyMock.isA(BundleListener.class));
+        EasyMock.expectLastCall().once();
         String caFilter = "(&(objectClass=org.osgi.service.cm.ConfigurationAdmin)"
                 + "(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*)))";
         EasyMock.expect(bc.createFilter(caFilter)).andReturn(FrameworkUtil.createFilter(caFilter)).anyTimes();
@@ -86,11 +91,19 @@ public class GuardProxyCatalogTest {
 
         EasyMock.verify(bc);
 
+        // Add some more behaviour checks to the bundle context
+        EasyMock.reset(bc);
+        bc.removeServiceListener(EasyMock.isA(ServiceListener.class));
+        EasyMock.expectLastCall().once();
+        bc.removeBundleListener(EasyMock.isA(BundleListener.class));
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(bc);
+
         gpc.close();
         assertEquals("Service Tracker for ConfigAdmin should be closed", -1, gpc.configAdminTracker.getTrackingCount());
         assertEquals("Service Tracker for ProxyManager should be closed", -1, gpc.proxyManagerTracker.getTrackingCount());
 
-
+        EasyMock.verify(bc);
     }
 
     @Test
