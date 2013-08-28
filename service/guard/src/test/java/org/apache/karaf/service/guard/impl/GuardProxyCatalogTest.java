@@ -28,6 +28,7 @@ import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.security.PrivilegedAction;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -576,6 +577,140 @@ public class GuardProxyCatalogTest {
         }
     }
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    @Test
+    public void testHandleServiceModified() throws Exception {
+        class MyService implements TestServiceAPI, TestServiceAPI2 {
+            public String doit(String s) {
+                return new StringBuilder(s).reverse().toString();
+            }
+
+            public String doit() {
+                return "Doing it";
+            }
+        };
+
+        Dictionary<String, Object> config = new Hashtable<String, Object>();
+        config.put(Constants.SERVICE_PID, "test.1.2.3");
+        config.put("service.guard", "(objectClass=" + TestServiceAPI.class.getName() + ")");
+        config.put("doit", "role.1");
+        Dictionary<String, Object> config2 = new Hashtable<String, Object>();
+        config2.put(Constants.SERVICE_PID, "test.1.2.4");
+        config2.put("service.guard", "(objectClass=" + TestServiceAPI2.class.getName() + ")");
+        config2.put("doit", "role.2");
+
+        BundleContext bc = mockConfigAdminBundleContext(config, config2);
+        // assertNotNull(testCreateProxy(bc, new Class [] {TestServiceAPI.class, TestServiceAPI2.class}, new MyService()));
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+        // The service being proxied has these properties
+        final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
+        serviceProps.put(Constants.OBJECTCLASS, new String [] {TestServiceAPI.class.getName(), TestServiceAPI2.class.getName()});
+        serviceProps.put(Constants.SERVICE_ID, 1L);
+        serviceProps.put(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY, Arrays.asList("someone")); // will be overwritten
+        Object myObject = new Object();
+        serviceProps.put("foo.bar", myObject);
+
+        BundleContext providerBC = EasyMock.createNiceMock(BundleContext.class);
+        EasyMock.expect(providerBC.registerService(
+                EasyMock.aryEq(new String [] {TestServiceAPI.class.getName(), TestServiceAPI2.class.getName()}),
+                EasyMock.anyObject(),
+                EasyMock.anyObject(Dictionary.class))).andAnswer(new IAnswer() {
+                    @Override
+                    public Object answer() throws Throwable {
+                        final Dictionary props = (Dictionary) EasyMock.getCurrentArguments()[2];
+                        assertEquals("Should only register a proxy", 678L, props.get(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY));
+
+                        ServiceRegistration reg = EasyMock.createMock(ServiceRegistration.class);
+                        ServiceReference sr = mockServiceReference(props);
+                        EasyMock.expect(reg.getReference()).andReturn(sr).anyTimes();
+                        reg.setProperties(EasyMock.isA(Dictionary.class));
+                        EasyMock.expectLastCall().andAnswer(new IAnswer<Object>() {
+                            @Override
+                            public Object answer() throws Throwable {
+                                // Push the update into the service reference
+                                ArrayList<String> oldKeys = Collections.list(props.keys());
+                                for (String key : oldKeys) {
+                                    props.remove(key);
+                                }
+                                Dictionary<String, Object> newProps = (Dictionary<String, Object>) EasyMock.getCurrentArguments()[0];
+                                for (String key : Collections.list(newProps.keys())) {
+                                    props.put(key, newProps.get(key));
+                                }
+                                return null;
+                            }
+                        }).once();
+                        EasyMock.replay(reg);
+
+                        return reg;
+                    }
+                }).anyTimes();
+
+        EasyMock.replay(providerBC);
+
+        // In some cases the proxy-creating code is looking for a classloader (e.g. when run through
+        // a coverage tool such as EclEmma). This will satisfy that.
+        BundleWiring bw = EasyMock.createMock(BundleWiring.class);
+        EasyMock.expect(bw.getClassLoader()).andReturn(getClass().getClassLoader()).anyTimes();
+        EasyMock.replay(bw);
+
+        // The mock bundle that provides the original service (and also the proxy is registered with this)
+        Bundle providerBundle = EasyMock.createNiceMock(Bundle.class);
+        EasyMock.expect(providerBundle.getBundleContext()).andReturn(providerBC).anyTimes();
+        EasyMock.expect(providerBundle.adapt(BundleWiring.class)).andReturn(bw).anyTimes();
+        EasyMock.replay(providerBundle);
+
+        ServiceReference sr = mockServiceReference(providerBundle, serviceProps);
+
+        // The mock bundle that consumes the service
+        Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(678L).anyTimes();
+        EasyMock.expect(clientBundle.loadClass(TestServiceAPI.class.getName())).andReturn((Class) TestServiceAPI.class).anyTimes();
+        EasyMock.expect(clientBundle.loadClass(TestServiceAPI2.class.getName())).andReturn((Class) TestServiceAPI2.class).anyTimes();
+        EasyMock.replay(clientBundle);
+
+        // The mock bundle context for the client bundle
+        BundleContext clientBC = EasyMock.createMock(BundleContext.class);
+        EasyMock.expect(clientBC.getBundle()).andReturn(clientBundle).anyTimes();
+        EasyMock.expect(clientBC.getService(sr)).andReturn(new MyService()).anyTimes();
+        EasyMock.replay(clientBC);
+
+        gpc.proxyIfNotAlreadyProxied(sr, clientBC);
+        GuardProxyCatalog.CreateProxyRunnable runnable = gpc.createProxyQueue.take();
+        runnable.run(getProxyManager());
+
+        ServiceRegistrationHolder holder = gpc.proxyMap.get(new GuardProxyCatalog.ProxyMapKey(sr, clientBC));
+        ServiceRegistration<?> reg = holder.registration;
+
+        for (String key : serviceProps.keySet()) {
+            if (GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY.equals(key)) {
+                assertEquals(Arrays.asList("role.1", "role.2"), reg.getReference().getProperty(key));
+            } else {
+                assertEquals(serviceProps.get(key), reg.getReference().getProperty(key));
+            }
+        }
+        assertEquals(678L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY));
+        assertEquals(1L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY));
+
+        // now change the original service and let the proxy react
+        serviceProps.put("test", "property");
+        assertEquals("Precondition, the mocked reference should have picked up this change",
+                "property", sr.getProperty("test"));
+
+        gpc.serviceChanged(new ServiceEvent(ServiceEvent.MODIFIED, sr));
+        assertEquals("Changing the service should not change the number of proxies", 1, gpc.proxyMap.size());
+
+        for (String key : serviceProps.keySet()) {
+            if (GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY.equals(key)) {
+                assertEquals(Arrays.asList("role.1", "role.2"), reg.getReference().getProperty(key));
+            } else {
+                assertEquals(serviceProps.get(key), reg.getReference().getProperty(key));
+            }
+        }
+        assertEquals("property", reg.getReference().getProperty("test"));
+        assertEquals(678L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY));
+        assertEquals(1L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY));
+    }
+
     public Dictionary<String, Object> testCreateProxy(Class<?> intf, Object testService) throws Exception {
         return testCreateProxy(mockBundleContext(), intf, intf, testService);
     }
@@ -754,6 +889,7 @@ public class GuardProxyCatalogTest {
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
         serviceProps.put(Constants.OBJECTCLASS, objClsMap.keySet().toArray(new String [] {}));
         serviceProps.put(Constants.SERVICE_ID, Long.MAX_VALUE);
+        serviceProps.put(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY, Arrays.asList("everyone")); // will be overwritten
         serviceProps.put("bar", "foo");
 
         final Map<ServiceReference<?>, Object> serviceMap = new HashMap<ServiceReference<?>, Object>();
@@ -783,7 +919,12 @@ public class GuardProxyCatalogTest {
 
                         Dictionary<String,Object> props = (Dictionary<String, Object>) EasyMock.getCurrentArguments()[2];
                         for (String key : expectedProxyProps.keySet()) {
-                            assertEquals(expectedProxyProps.get(key), props.get(key));
+                            if (GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY.equals(key)) {
+                                assertTrue("The roles property should have been overwritten",
+                                        !props.get(key).equals(Arrays.asList("everyone")));
+                            } else {
+                                assertEquals(expectedProxyProps.get(key), props.get(key));
+                            }
                         }
 
                         ServiceRegistration reg = EasyMock.createMock(ServiceRegistration.class);
@@ -856,7 +997,12 @@ public class GuardProxyCatalogTest {
         // The runnable should have put the actual registration in the holder
         ServiceReference<?> proxySR = holder.registration.getReference();
         for (String key : expectedProxyProps.keySet()) {
-            assertEquals(expectedProxyProps.get(key), proxySR.getProperty(key));
+            if (GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY.equals(key)) {
+                assertTrue("The roles property should have been overwritten",
+                        !proxySR.getProperty(key).equals(Arrays.asList("everyone")));
+            } else {
+                assertEquals(expectedProxyProps.get(key), proxySR.getProperty(key));
+            }
         }
 
         // Check that the proxy registration was done on the original provider bundle's context
@@ -952,28 +1098,22 @@ public class GuardProxyCatalogTest {
         return mockServiceReference(props, Object.class);
     }
 
-    private <T> ServiceReference<T> mockServiceReference(final Dictionary<String, Object> props, Class<T> cls) {
-        @SuppressWarnings("unchecked")
-        ServiceReference<T> sr = EasyMock.createMock(ServiceReference.class);
-
-        EasyMock.expect(sr.getPropertyKeys()).andReturn(
-                Collections.list(props.keys()).toArray(new String [] {})).anyTimes();
-        EasyMock.expect(sr.getProperty(EasyMock.isA(String.class))).andAnswer(new IAnswer<Object>() {
-            @Override
-            public Object answer() throws Throwable {
-                return props.get(EasyMock.getCurrentArguments()[0]);
-            }
-        }).anyTimes();
-        EasyMock.replay(sr);
-        return sr;
+    @SuppressWarnings("unchecked")
+    private <T> ServiceReference<T> mockServiceReference(Dictionary<String, Object> props, Class<T> cls) {
+        return (ServiceReference<T>) mockServiceReference(null, props);
     }
 
     private ServiceReference<?> mockServiceReference(Bundle providerBundle,
             final Dictionary<String, Object> serviceProps) {
         ServiceReference<?> sr = EasyMock.createMock(ServiceReference.class);
 
-        EasyMock.expect(sr.getPropertyKeys()).andReturn(
-                Collections.list(serviceProps.keys()).toArray(new String [] {})).anyTimes();
+        // Make sure the properties are 'live' in that if they change the reference changes too
+        EasyMock.expect(sr.getPropertyKeys()).andAnswer(new IAnswer<String[]>() {
+                @Override
+                public String[] answer() throws Throwable {
+                    return Collections.list(serviceProps.keys()).toArray(new String [] {});
+                }
+            }).anyTimes();
         EasyMock.expect(sr.getProperty(EasyMock.isA(String.class))).andAnswer(new IAnswer<Object>() {
             @Override
             public Object answer() throws Throwable {

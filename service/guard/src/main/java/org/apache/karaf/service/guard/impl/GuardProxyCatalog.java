@@ -217,7 +217,11 @@ public class GuardProxyCatalog implements ServiceListener {
             public void run(ProxyManager pm) throws Exception {
                 List<String> objectClassProperty =
                         new ArrayList<String>(Arrays.asList((String[]) originalRef.getProperty(Constants.OBJECTCLASS)));
+
+                // This needs to be done on the Client BundleContext since the bundle might be backed by a Service Factory
+                // in which case it needs to be given a chance to produce the right service for this client.
                 Object svc = clientBC.getService(originalRef);
+
                 Set<Class<?>> allClasses = new HashSet<Class<?>>();
                 for (Iterator<String> i = objectClassProperty.iterator(); i.hasNext(); ) {
                     String cls = i.next();
@@ -276,9 +280,7 @@ public class GuardProxyCatalog implements ServiceListener {
                 Dictionary<String, Object> p = proxyProperties(originalRef, clientBC.getBundle().getBundleId(), orgServiceID);
 
                 List<String> roles = getServiceInvocationRoles(originalRef);
-                if (roles != null) {
-                    p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
-                }
+                p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
                 return p;
             }
         };
