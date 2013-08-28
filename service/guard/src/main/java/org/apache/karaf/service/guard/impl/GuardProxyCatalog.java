@@ -31,7 +31,6 @@ import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -125,14 +124,16 @@ public class GuardProxyCatalog implements ServiceListener {
             return;
         }
 
-        long orgServiceID = (Long) sr.getProperty(Constants.SERVICE_ID);
         if (event.getType() == ServiceEvent.UNREGISTERING) {
-            handleOriginalServiceUnregistering(orgServiceID);
+            handleOriginalServiceUnregistering((Long) sr.getProperty(Constants.SERVICE_ID));
         }
 
-        // TODO service MODIFIED
+        if ((event.getType() & (ServiceEvent.MODIFIED | ServiceEvent.MODIFIED_ENDMATCH)) > 0) {
+            handleOriginalServiceModifed(sr);
+        }
     }
-    // TODO do the above for bundles too
+    // TODO do the above for bundles too, only when the client bundle unregisters. When the provider bundle unregisters
+    // we don't need to do anything
 
     private void handleOriginalServiceUnregistering(long orgServiceID) {
         for (Iterator<CreateProxyRunnable> i = createProxyQueue.iterator(); i.hasNext(); ) {
@@ -143,13 +144,33 @@ public class GuardProxyCatalog implements ServiceListener {
         }
 
         for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
-            Entry<ProxyMapKey, ServiceRegistrationHolder> entry = i.next();
+            Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry = i.next();
             if (entry.getKey().serviceReference.getProperty(Constants.SERVICE_ID).equals(orgServiceID)) {
                 ServiceRegistration<?> reg = entry.getValue().registration;
                 if (reg != null) {
                     reg.unregister();
                 }
                 i.remove();
+            }
+        }
+    }
+
+    private void handleOriginalServiceModifed(ServiceReference<?> orgServiceRef) {
+        // We don't need to do anything for services that are queued up to be proxied, as the
+        // properties are only taken at the point of proxyfication...
+
+        for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
+            Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry = i.next();
+            if (entry.getKey().serviceReference.equals(orgServiceRef)) {
+                ServiceRegistration<?> reg = entry.getValue().registration;
+                if (reg != null) {
+                    // Preserve the roles as they are expensive to compute
+                    Object roles = reg.getReference().getProperty(SERVICE_GUARD_ROLES_PROPERTY);
+                    Dictionary<String, Object> newProxyProps = proxyProperties(
+                            orgServiceRef, entry.getKey().clientBundleID, (Long) orgServiceRef.getProperty(Constants.SERVICE_ID));
+                    newProxyProps.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+                    reg.setProperties(newProxyProps);
+                }
             }
         }
     }
@@ -245,19 +266,16 @@ public class GuardProxyCatalog implements ServiceListener {
                 InvocationListener il = new ProxyInvocationListener(originalRef);
                 Object proxyService = pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
                 ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
-                        objectClassProperty.toArray(new String [] {}), proxyService, proxyProperties(originalRef, clientBC));
+                        objectClassProperty.toArray(new String [] {}), proxyService, proxyPropertiesRoles());
 
                 // put the actual service registration in the holder
                 registrationHolder.registration = proxyReg;
-
-                // TODO register listener that unregisters the proxy once the original service is gone.
             }
 
-            private Dictionary<String, Object> proxyProperties(ServiceReference<?> sr, BundleContext clientBC) throws Exception {
-                Dictionary<String, Object> p = copyProperties(sr);
-                p.put(PROXY_FOR_BUNDLE_KEY, new Long(clientBC.getBundle().getBundleId()));
-                p.put(PROXY_FOR_SERVICE_KEY, new Long(getOriginalServiceID()));
-                List<String> roles = getServiceInvocationRoles(sr);
+            private Dictionary<String, Object> proxyPropertiesRoles() throws Exception {
+                Dictionary<String, Object> p = proxyProperties(originalRef, clientBC.getBundle().getBundleId(), orgServiceID);
+
+                List<String> roles = getServiceInvocationRoles(originalRef);
                 if (roles != null) {
                     p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
                 }
@@ -267,7 +285,14 @@ public class GuardProxyCatalog implements ServiceListener {
         createProxyQueue.put(cpr);
     }
 
-    private Dictionary<String, Object> copyProperties(ServiceReference<?> sr) {
+    private static Dictionary<String, Object> proxyProperties(ServiceReference<?> sr, Long clientBundleID, Long orgServiceID) {
+        Dictionary<String, Object> p = copyProperties(sr);
+        p.put(PROXY_FOR_BUNDLE_KEY, clientBundleID);
+        p.put(PROXY_FOR_SERVICE_KEY, orgServiceID);
+        return p;
+    }
+
+    private static Dictionary<String, Object> copyProperties(ServiceReference<?> sr) {
         Dictionary<String, Object> p = new Hashtable<String, Object>();
 
         for (String key : sr.getPropertyKeys()) {

@@ -426,7 +426,8 @@ public class GuardProxyCatalogTest {
             }
         }).anyTimes();
         final ServiceListener [] pmListenerHolder = new ServiceListener [1];
-        String pmFilter = "(&(objectClass=org.apache.aries.proxy.ProxyManager)(!(.org.apache.karaf.service.guard.impl.GuardProxyCatalog=*)))";
+        String pmFilter = "(&(objectClass=" + ProxyManager.class.getName() + ")" +
+                "(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*)))";
         bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(pmFilter));
         EasyMock.expectLastCall().andAnswer(new IAnswer<Object>() {
             @Override
@@ -445,6 +446,7 @@ public class GuardProxyCatalogTest {
         // The service being proxied has these properties
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
         serviceProps.put(Constants.OBJECTCLASS, new String [] {TestServiceAPI.class.getName()});
+        serviceProps.put(Constants.SERVICE_ID, 162L);
 
         final Map<ServiceReference<?>, Object> serviceMap = new HashMap<ServiceReference<?>, Object>();
 
@@ -594,6 +596,7 @@ public class GuardProxyCatalogTest {
         // The service being proxied has these properties
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
         serviceProps.put(Constants.OBJECTCLASS, new String [] {intf.getName()});
+        serviceProps.put(Constants.SERVICE_ID, 456L);
         serviceProps.put(".foo", 123L);
 
         final Map<ServiceReference<?>, Object> serviceMap = new HashMap<ServiceReference<?>, Object>();
@@ -750,6 +753,7 @@ public class GuardProxyCatalogTest {
         // The service being proxied has these properties
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
         serviceProps.put(Constants.OBJECTCLASS, objClsMap.keySet().toArray(new String [] {}));
+        serviceProps.put(Constants.SERVICE_ID, Long.MAX_VALUE);
         serviceProps.put("bar", "foo");
 
         final Map<ServiceReference<?>, Object> serviceMap = new HashMap<ServiceReference<?>, Object>();
@@ -933,7 +937,8 @@ public class GuardProxyCatalogTest {
                 return FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
             }
         }).anyTimes();
-        String cmFilter = "(&(objectClass=org.osgi.service.cm.ConfigurationAdmin)(!(.org.apache.karaf.service.guard.impl.GuardProxyCatalog=*)))";
+        String cmFilter = "(&(objectClass=" + ConfigurationAdmin.class.getName() + ")"
+                + "(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*)))";
         bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(cmFilter));
         EasyMock.expectLastCall().anyTimes();
         EasyMock.expect(bc.getServiceReferences(EasyMock.anyObject(String.class), EasyMock.eq(cmFilter))).
