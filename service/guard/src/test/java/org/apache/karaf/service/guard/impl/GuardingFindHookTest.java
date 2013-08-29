@@ -74,6 +74,44 @@ public class GuardingFindHookTest {
         assertEquals(sref2, gpc.proxyMap.keySet().iterator().next().serviceReference);
     }
 
+    @Test
+    public void testFindHookProxyServices() throws Exception {
+        BundleContext hookBC = mockBundleContext(5L);
+        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
+
+        Filter serviceFilter = FrameworkUtil.createFilter("(service.id=*)"); // any service
+        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
+
+        BundleContext clientBC = mockBundleContext(31L);
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        props.put(Constants.SERVICE_ID, 16L);
+        props.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 12L);
+        props.put(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY, 1L);
+        ServiceReference<?> sref = mockServiceReference(props);
+
+        Collection<ServiceReference<?>> refs = new ArrayList<ServiceReference<?>>();
+        refs.add(sref);
+
+        assertEquals("Precondition", 0, gpc.proxyMap.size());
+        gfh.find(clientBC, null, null, false, refs);
+        assertEquals("No proxy should have been created for the proxy find", 0, gpc.proxyMap.size());
+        assertEquals("The proxy for a different bundle should have been hidden from the client", 0, refs.size());
+
+        Dictionary<String, Object> props2 = new Hashtable<String, Object>();
+        props2.put(Constants.SERVICE_ID, 16L);
+        props2.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, clientBC.getBundle().getBundleId());
+        props2.put(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY, 1L);
+        ServiceReference<?> sref2 = mockServiceReference(props2);
+
+        Collection<ServiceReference<?>> refs2 = new ArrayList<ServiceReference<?>>();
+        refs2.add(sref2);
+        gfh.find(clientBC, null, null, false, refs2);
+        assertEquals("No proxy should have been created for the proxy find", 0, gpc.proxyMap.size());
+        assertEquals("As the proxy is for this bundle is should be visible and remain on the list",
+                Collections.singletonList(sref2), refs2);
+    }
+
     private BundleContext mockBundleContext(long id) throws Exception {
         Bundle bundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(bundle.getBundleId()).andReturn(id).anyTimes();

@@ -66,6 +66,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     static final String PROXY_CREATOR_THREAD_NAME = "Secure OSGi Service Proxy Creator";
     static final String PROXY_FOR_BUNDLE_KEY = "." + GuardProxyCatalog.class.getName() + ".org-bundle";
+    // TODO do we really need the next property???
     static final String PROXY_FOR_SERVICE_KEY = "." + GuardProxyCatalog.class.getName() + ".org-service";
 
     private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
