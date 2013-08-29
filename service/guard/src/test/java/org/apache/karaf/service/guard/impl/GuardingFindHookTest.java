@@ -159,6 +159,24 @@ public class GuardingFindHookTest {
         gfh.find(null, null, null, true, null); // should just do nothing
     }
 
+    @Test
+    public void testBundleListener() {
+        BundleContext bc = EasyMock.createMock(BundleContext.class);
+        bc.addBundleListener(EasyMock.isA(GuardingFindHook.class));
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(bc);
+
+        GuardingFindHook gfh = new GuardingFindHook(bc, null, null);
+        EasyMock.verify(bc);
+
+        EasyMock.reset(bc);
+        bc.removeBundleListener(gfh);
+        EasyMock.replay(bc);
+
+        gfh.close();
+        EasyMock.verify(bc);
+    }
+
     private BundleContext mockBundleContext(long id) throws Exception {
         Bundle bundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(bundle.getBundleId()).andReturn(id).anyTimes();

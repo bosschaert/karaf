@@ -58,6 +58,10 @@ class GuardingFindHook implements FindHook, BundleListener {
         myBC.addBundleListener(this);
     }
 
+    void close() {
+        myBundleContext.removeBundleListener(this);
+    }
+
     @Override
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
