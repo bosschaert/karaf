@@ -28,12 +28,12 @@ import org.osgi.framework.ServiceReference;
 import org.osgi.framework.hooks.service.EventListenerHook;
 import org.osgi.framework.hooks.service.ListenerHook.ListenerInfo;
 
-public class GuardingEventHook implements EventListenerHook {
+class GuardingEventHook implements EventListenerHook {
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
     private final Filter servicesFilter;
 
-    public GuardingEventHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) throws InvalidSyntaxException {
+    GuardingEventHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) throws InvalidSyntaxException {
         myBundleContext = myBC;
         guardProxyCatalog = gpc;
         servicesFilter = securedServicesFilter;
