@@ -213,9 +213,6 @@ public class GuardingFindHookTest {
                 return props.get(EasyMock.getCurrentArguments()[0]);
             }
         }).anyTimes();
-        if (null != null) {
-            EasyMock.expect(sr.getBundle()).andReturn(null).anyTimes();
-        }
         EasyMock.replay(sr);
         return sr;
     }
