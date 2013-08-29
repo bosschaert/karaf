@@ -49,18 +49,13 @@ public class GuardingFindHook implements FindHook {
     @Override
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
-
-        /*
-        if (filter.contains("foo")) {
-            System.out.println("FINDHOOK: " + filter);
-        }
-        */
-
-        if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
-            // TODO should we only do this when nothing was returned? Probably better to do it always?
-            // Someone is looking for a service based on roles, trigger a lookup of the service
-            // without the roles, which will cause the service proxy with the roles being registered
-            triggerProxyCreation(context, filter);
+        if (filter != null) {
+            if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
+                // TODO should we only do this when nothing was returned? Probably better to do it always?
+                // Someone is looking for a service based on roles, trigger a lookup of the service
+                // without the roles, which will cause the service proxy with the roles being registered
+                triggerProxyCreation(context, filter);
+            }
         }
 
         if (servicesFilter == null) {
@@ -81,13 +76,7 @@ public class GuardingFindHook implements FindHook {
 
             if (!guardProxyCatalog.isProxyFor(sr, context)) {
                 i.remove();
-
-                // TODO this can be done in a separate thread...
-                try {
-                    guardProxyCatalog.proxyIfNotAlreadyProxied(sr, context);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+                guardProxyCatalog.proxyIfNotAlreadyProxied(sr, context); // Note does most of the work async
             }
         }
     }

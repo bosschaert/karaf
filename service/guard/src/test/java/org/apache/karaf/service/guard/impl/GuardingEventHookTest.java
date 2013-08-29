@@ -179,33 +179,23 @@ public class GuardingEventHookTest {
     }
 
     private ServiceReference<?> mockServiceReference(final Dictionary<String, Object> props) {
-        return mockServiceReference(props, Object.class);
-    }
-
-    @SuppressWarnings("unchecked")
-    private <T> ServiceReference<T> mockServiceReference(Dictionary<String, Object> props, Class<T> cls) {
-        return (ServiceReference<T>) mockServiceReference(null, props);
-    }
-
-    private ServiceReference<?> mockServiceReference(Bundle providerBundle,
-            final Dictionary<String, Object> serviceProps) {
         ServiceReference<?> sr = EasyMock.createMock(ServiceReference.class);
 
         // Make sure the properties are 'live' in that if they change the reference changes too
         EasyMock.expect(sr.getPropertyKeys()).andAnswer(new IAnswer<String[]>() {
                 @Override
                 public String[] answer() throws Throwable {
-                    return Collections.list(serviceProps.keys()).toArray(new String [] {});
+                    return Collections.list(props.keys()).toArray(new String [] {});
                 }
             }).anyTimes();
         EasyMock.expect(sr.getProperty(EasyMock.isA(String.class))).andAnswer(new IAnswer<Object>() {
             @Override
             public Object answer() throws Throwable {
-                return serviceProps.get(EasyMock.getCurrentArguments()[0]);
+                return props.get(EasyMock.getCurrentArguments()[0]);
             }
         }).anyTimes();
-        if (providerBundle != null) {
-            EasyMock.expect(sr.getBundle()).andReturn(providerBundle).anyTimes();
+        if (null != null) {
+            EasyMock.expect(sr.getBundle()).andReturn(null).anyTimes();
         }
         EasyMock.replay(sr);
         return sr;

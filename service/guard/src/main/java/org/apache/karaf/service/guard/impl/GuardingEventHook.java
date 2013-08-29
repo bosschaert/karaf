@@ -63,7 +63,7 @@ public class GuardingEventHook implements EventListenerHook {
             }
 
             i.remove();
-            guardProxyCatalog.proxyIfNotAlreadyProxied(sr, bc);
+            guardProxyCatalog.proxyIfNotAlreadyProxied(sr, bc); // Note does most of the work async
         }
     }
 }
