@@ -17,6 +17,8 @@
 package org.apache.karaf.service.guard.impl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -24,6 +26,7 @@ import java.util.Collections;
 import java.util.Dictionary;
 import java.util.Hashtable;
 
+import org.apache.karaf.service.guard.impl.GuardProxyCatalog.ProxyMapKey;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
 import org.junit.Test;
@@ -69,9 +72,46 @@ public class GuardingFindHookTest {
 
         gfh.find(clientBC, null, null, true, refs2);
         assertEquals("The service should be hidden from the client", 0, refs2.size());
-        assertEquals("Precondition", 1, gpc.proxyMap.size());
-        assertEquals(clientBC, gpc.proxyMap.keySet().iterator().next().clientBundleContext);
-        assertEquals(sref2, gpc.proxyMap.keySet().iterator().next().serviceReference);
+        assertEquals("The service should have caused a proxy creation", 1, gpc.proxyMap.size());
+        assertEquals("A proxy creation job should have been created", 1, gpc.createProxyQueue.size());
+        ProxyMapKey pmk = gpc.proxyMap.keySet().iterator().next();
+        assertEquals(clientBC, pmk.clientBundleContext);
+        assertEquals(sref2, pmk.serviceReference);
+
+        Collection<ServiceReference<?>> refs3 = new ArrayList<ServiceReference<?>>();
+        refs3.add(sref2);
+
+        // Ensure that the hook bundle has nothing hidden
+        gfh.find(hookBC, null, null, true, refs3);
+        assertEquals("The service should not be hidden from the hook bundle", Collections.singletonList(sref2), refs3);
+        assertEquals("No proxy creation caused in this case", 1, gpc.proxyMap.size());
+        assertSame(pmk, gpc.proxyMap.keySet().iterator().next());
+
+        // Ensure that the system bundle has nothing hidden
+        gfh.find(mockBundleContext(0L), null, null, true, refs3);
+        assertEquals("The service should not be hidden from the framework bundle", Collections.singletonList(sref2), refs3);
+        assertEquals("No proxy creation caused in this case", 1, gpc.proxyMap.size());
+        assertSame(pmk, gpc.proxyMap.keySet().iterator().next());
+
+        // Ensure that if we ask for the same client again, it will not create another proxy
+        gpc.createProxyQueue.clear(); // Manually empty the queue
+        gfh.find(clientBC, null, null, true, refs3);
+        assertEquals("The service should be hidden from the client", 0, refs3.size());
+        assertEquals("There is already a proxy for this client, no need for an additional one", 1, gpc.proxyMap.size());
+        assertEquals("No additional jobs should have been scheduled", 0, gpc.createProxyQueue.size());
+        assertSame(pmk, gpc.proxyMap.keySet().iterator().next());
+
+        Collection<ServiceReference<?>> refs4 = new ArrayList<ServiceReference<?>>();
+        refs4.add(sref2);
+
+        // another client should get another proxy
+        BundleContext client2BC = mockBundleContext(32768L);
+        gfh.find(client2BC, null, null, true, refs4);
+        assertEquals("The service should be hidden for this new client", 0, refs4.size());
+        assertEquals("A proxy creation job should have been created", 1, gpc.createProxyQueue.size());
+        assertEquals("A new proxy for a new client should have been created", 2, gpc.proxyMap.size());
+        assertNotNull(gpc.proxyMap.get(pmk));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref2, client2BC)));
     }
 
     @Test
@@ -110,6 +150,15 @@ public class GuardingFindHookTest {
         assertEquals("No proxy should have been created for the proxy find", 0, gpc.proxyMap.size());
         assertEquals("As the proxy is for this bundle is should be visible and remain on the list",
                 Collections.singletonList(sref2), refs2);
+    }
+
+    @Test
+    public void testNullFilter() throws Exception {
+        BundleContext hookBC = mockBundleContext(5L);
+        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
+
+        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, null);
+        gfh.find(null, null, null, true, null); // should just do nothing
     }
 
     private BundleContext mockBundleContext(long id) throws Exception {
