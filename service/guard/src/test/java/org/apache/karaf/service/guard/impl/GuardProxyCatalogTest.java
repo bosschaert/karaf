@@ -190,7 +190,6 @@ public class GuardProxyCatalogTest {
 
         Hashtable<String, Object> proxyProps = new Hashtable<String, Object>(props);
         proxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
-        proxyProps.put(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY, 888L);
         ServiceReference<?> proxyRef = mockServiceReference(proxyProps);
         gpc.serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, proxyRef));
         assertEquals("Unregistering the proxy should be ignored by the listener", 3, gpc.proxyMap.size());
@@ -783,7 +782,6 @@ public class GuardProxyCatalogTest {
             }
         }
         assertEquals(678L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY));
-        assertEquals(1L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY));
 
         // now change the original service and let the proxy react
         serviceProps.put("test", "property");
@@ -802,7 +800,6 @@ public class GuardProxyCatalogTest {
         }
         assertEquals("property", reg.getReference().getProperty("test"));
         assertEquals(678L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY));
-        assertEquals(1L, reg.getReference().getProperty(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY));
     }
 
     public Dictionary<String, Object> testCreateProxy(Class<?> intf, Object testService) throws Exception {

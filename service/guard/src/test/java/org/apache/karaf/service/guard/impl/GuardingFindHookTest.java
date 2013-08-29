@@ -127,7 +127,6 @@ public class GuardingFindHookTest {
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put(Constants.SERVICE_ID, 16L);
         props.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 12L);
-        props.put(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY, 1L);
         ServiceReference<?> sref = mockServiceReference(props);
 
         Collection<ServiceReference<?>> refs = new ArrayList<ServiceReference<?>>();
@@ -141,7 +140,6 @@ public class GuardingFindHookTest {
         Dictionary<String, Object> props2 = new Hashtable<String, Object>();
         props2.put(Constants.SERVICE_ID, 16L);
         props2.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, clientBC.getBundle().getBundleId());
-        props2.put(GuardProxyCatalog.PROXY_FOR_SERVICE_KEY, 1L);
         ServiceReference<?> sref2 = mockServiceReference(props2);
 
         Collection<ServiceReference<?>> refs2 = new ArrayList<ServiceReference<?>>();
