@@ -31,7 +31,7 @@ import org.osgi.framework.hooks.service.ListenerHook.ListenerInfo;
 public class GuardingEventHook implements EventListenerHook {
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
-    final Filter servicesFilter;
+    private final Filter servicesFilter;
 
     public GuardingEventHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) throws InvalidSyntaxException {
         myBundleContext = myBC;
@@ -62,20 +62,8 @@ public class GuardingEventHook implements EventListenerHook {
                 continue;
             }
 
-            /*
-            if ("foo".equals(sr.getProperty("osgi.command.scope"))) {
-                System.out.println("EVENTHOOK: foo " + bc.getBundle().getSymbolicName());
-            }
-            */
-            // System.out.println("Looking for a proxy for " + bc.getBundle().getBundleId());
-            // System.out.println("Removing service for: " + sr.getProperty("." + GuardProxyCatalog.class.getName()));
             i.remove();
-            // TODO this can be done in a separate thread...
-            try {
-                guardProxyCatalog.proxyIfNotAlreadyProxied(sr, bc);
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
+            guardProxyCatalog.proxyIfNotAlreadyProxied(sr, bc);
         }
     }
 }

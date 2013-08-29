@@ -222,7 +222,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         return new Long(clientBC.getBundle().getBundleId()).equals(sr.getProperty(PROXY_FOR_BUNDLE_KEY));
     }
 
-    void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC) throws Exception {
+    void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC)  {
         if (isProxy(originalRef)) {
             // It's already a proxy, don't re-proxy
             return;
@@ -328,7 +328,13 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 return p;
             }
         };
-        createProxyQueue.put(cpr);
+
+        try {
+            createProxyQueue.put(cpr);
+        } catch (InterruptedException e) {
+            // TODO LOG
+            e.printStackTrace();
+        }
     }
 
     private static void unregisterProxy(Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry) {
