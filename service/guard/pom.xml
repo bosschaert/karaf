@@ -31,7 +31,7 @@
     <artifactId>org.apache.karaf.service.guard</artifactId>
     <packaging>bundle</packaging>
     <name>Apache Karaf :: Service :: Guard</name>
-    <description>Provides shell commands to manipulate OSGi services</description>
+    <description>Adds role-based access control to OSGi services</description>
 
     <properties>
         <appendedResourcesDirectory>${basedir}/../../etc/appended-resources</appendedResourcesDirectory>

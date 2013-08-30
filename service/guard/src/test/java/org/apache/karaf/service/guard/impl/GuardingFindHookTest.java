@@ -17,14 +17,17 @@
 package org.apache.karaf.service.guard.impl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Dictionary;
 import java.util.Hashtable;
+import java.util.List;
 
 import org.apache.karaf.service.guard.impl.GuardProxyCatalog.ProxyMapKey;
 import org.easymock.EasyMock;
@@ -35,6 +38,7 @@ import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
+import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceReference;
 
 public class GuardingFindHookTest {
@@ -177,7 +181,68 @@ public class GuardingFindHookTest {
         EasyMock.verify(bc);
     }
 
+    @Test
+    public void testRoleBasedFind1() throws Exception {
+        Filter nonRoleFilter = getNonRoleFilter("(&(test=val*)(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole))");
+
+        // Check that the filter created to find service that don't have the roles matches the right services
+        assertTrue(nonRoleFilter.match(dict("test=value")));
+        assertTrue(nonRoleFilter.match(dict("test=value2", "foo=bar")));
+        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole")));
+        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole")));
+        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole",
+                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=testrole")));
+    }
+
+    @Test
+    public void testRoleBasedFind2() throws Exception {
+        Filter nonRoleFilter = getNonRoleFilter("(&(|(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole)"
+                + "(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole))(|(test=val*)(x=y)))");
+
+        // Check that the filter created to find service that don't have the roles matches the right services
+        assertTrue(nonRoleFilter.match(dict("test=value")));
+        assertTrue(nonRoleFilter.match(dict("x=y")));
+        assertTrue(nonRoleFilter.match(dict("test=value", "x=y")));
+        assertFalse(nonRoleFilter.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole")));
+        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
+        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole",
+                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
+    }
+
+    private Filter getNonRoleFilter(String roleFilter) throws Exception, InvalidSyntaxException {
+        List<Filter> filtersCreated = new ArrayList<Filter>();
+        BundleContext hookBC = mockBundleContext(5L, filtersCreated);
+        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
+
+        Filter serviceFilter = FrameworkUtil.createFilter("(x=y)"); // doesn't matter here
+        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
+
+        BundleContext clientBC = mockBundleContext(98765L);
+
+        filtersCreated.clear();
+        gfh.find(clientBC, null, roleFilter, true, Collections.<ServiceReference<?>>emptyList());
+        assertEquals("Only one filter expected to be created", 1, filtersCreated.size());
+        Filter nonRoleFilter = filtersCreated.get(0);
+        return nonRoleFilter;
+    }
+
+    private Dictionary<String, Object> dict(String ... entry) {
+        Dictionary<String, Object> d = new Hashtable<String, Object>();
+        for (String e : entry) {
+            int idx = e.indexOf('=');
+            if (idx < 0) {
+                throw new IllegalArgumentException(e);
+            }
+            d.put(e.substring(0, idx), e.substring(idx + 1));
+        }
+        return d;
+    }
+
     private BundleContext mockBundleContext(long id) throws Exception {
+        return mockBundleContext(id, new ArrayList<Filter>());
+    }
+
+    private BundleContext mockBundleContext(long id, final List<Filter> filtersCreated) throws Exception {
         Bundle bundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(bundle.getBundleId()).andReturn(id).anyTimes();
 
@@ -186,7 +251,9 @@ public class GuardingFindHookTest {
         EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
             @Override
             public Filter answer() throws Throwable {
-                return FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
+                Filter filter = FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
+                filtersCreated.add(filter);
+                return filter;
             }
         }).anyTimes();
         EasyMock.replay(bc);

@@ -65,17 +65,16 @@ class GuardingFindHook implements FindHook, BundleListener {
     @Override
     public void find(BundleContext context, String name, String filter, boolean allServices,
             Collection<ServiceReference<?>> references) {
-        if (filter != null) {
-            if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
-                // TODO should we only do this when nothing was returned? Probably better to do it always?
-                // Someone is looking for a service based on roles, trigger a lookup of the service
-                // without the roles, which will cause the service proxy with the roles being registered
-                addNonRoleServiceTracker(context, filter);
-            }
-        }
-
         if (servicesFilter == null) {
             return;
+        }
+
+        if (filter != null) {
+            if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
+                // Someone is looking for a service based on roles. As the roles are added by the proxy we need
+                // to start looking for services without those roles and proxy them if needed.
+                addNonRoleServiceTracker(context, filter);
+            }
         }
 
         if (myBundleContext.equals(context) || context.getBundle().getBundleId() == 0) {
@@ -103,8 +102,6 @@ class GuardingFindHook implements FindHook, BundleListener {
     // This method kicks off a process that adds a ServiceTracker that gets notified if such a service ever arrives.
     private void addNonRoleServiceTracker(final BundleContext context, final String filter) {
         // Replace the condition on the roles with a condition on services that don't specify the role at all
-// TODO
-//        String nonRoleFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("(" + Constants.SERVICE_ID + "=*)");
         String nonRoleFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("(!(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=*))");
 
         // Find/create a new MST. This tracker will track the filter for a number of bundle contexts.
@@ -187,7 +184,9 @@ class GuardingFindHook implements FindHook, BundleListener {
             // We now need to make sure that there is are matching proxies for it too
             // to that all the interested clients can see it...
             for (BundleContext bc : clientBCs) {
-                guardProxyCatalog.proxyIfNotAlreadyProxied(reference, bc);
+                if (servicesFilter.match(reference)) {
+                    guardProxyCatalog.proxyIfNotAlreadyProxied(reference, bc);
+                }
             }
             return super.addingService(reference);
         }

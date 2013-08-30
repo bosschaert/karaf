@@ -25,6 +25,8 @@ import org.osgi.framework.hooks.service.FindHook;
 // This bundle is quite low-level and benefits from starting early in the process. Therefore it does not depend
 // on Blueprint but rather uses direct OSGi framework APIs and Service Trackers...
 public class Activator implements BundleActivator {
+    GuardingEventHook guardingEventHook;
+    GuardingFindHook guardingFindHook;
     GuardProxyCatalog guardProxyCatalog;
 
     @Override
@@ -40,12 +42,18 @@ public class Activator implements BundleActivator {
 
         guardProxyCatalog = new GuardProxyCatalog(context);
 
-        context.registerService(EventListenerHook.class, new GuardingEventHook(context, guardProxyCatalog, securedServicesFilter), null);
-        context.registerService(FindHook.class, new GuardingFindHook(context, guardProxyCatalog, securedServicesFilter), null);
+        guardingEventHook = new GuardingEventHook(context, guardProxyCatalog, securedServicesFilter);
+        context.registerService(EventListenerHook.class, guardingEventHook, null);
+
+        guardingFindHook = new GuardingFindHook(context, guardProxyCatalog, securedServicesFilter);
+        context.registerService(FindHook.class, guardingFindHook, null);
     }
 
     @Override
     public void stop(BundleContext context) throws Exception {
+        guardingFindHook.close();
+        guardingEventHook.close();
+
         guardProxyCatalog.close();
     }
 }

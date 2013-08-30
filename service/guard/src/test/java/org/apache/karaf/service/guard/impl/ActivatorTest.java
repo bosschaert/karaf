@@ -63,6 +63,8 @@ public class ActivatorTest {
             a.start(bc);
 
             assertNotNull(a.guardProxyCatalog);
+            assertNotNull(a.guardingEventHook);
+            assertNotNull(a.guardingFindHook);
 
             EasyMock.verify(bc);
         } finally {
@@ -97,13 +99,26 @@ public class ActivatorTest {
     @Test
     public void testStopActivator() throws Exception {
         Activator a = new Activator();
+
+        a.guardingEventHook = EasyMock.createMock(GuardingEventHook.class);
+        a.guardingEventHook.close();
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(a.guardingEventHook);
+
+        a.guardingFindHook = EasyMock.createMock(GuardingFindHook.class);
+        a.guardingFindHook.close();
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(a.guardingFindHook);
+
         a.guardProxyCatalog = EasyMock.createMock(GuardProxyCatalog.class);
         a.guardProxyCatalog.close();
-        EasyMock.expectLastCall();
+        EasyMock.expectLastCall().once();
         EasyMock.replay(a.guardProxyCatalog);
 
         a.stop(EasyMock.createMock(BundleContext.class));
 
+        EasyMock.verify(a.guardingEventHook);
+        EasyMock.verify(a.guardingFindHook);
         EasyMock.verify(a.guardProxyCatalog);
     }
 
