@@ -48,7 +48,7 @@ class GuardingFindHook implements FindHook, BundleListener {
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
     private final Filter servicesFilter;
-    private final Map<String, MultiplexingServiceTracker> trackers = new HashMap<String, MultiplexingServiceTracker>();
+    final Map<String, MultiplexingServiceTracker> trackers = new HashMap<String, MultiplexingServiceTracker>();
 
     GuardingFindHook(BundleContext myBC, GuardProxyCatalog gpc, Filter securedServicesFilter) {
         myBundleContext = myBC;
@@ -152,8 +152,8 @@ class GuardingFindHook implements FindHook, BundleListener {
 
     // This Service Tracker tracks services and once it finds any matches will create proxies for all clients that need it proxied.
     // It can be useful if the client looks for the roles property which is specified on the proxy but not on the original service.
-    private class MultiplexingServiceTracker extends ServiceTracker<Object, Object> {
-        private List<BundleContext> clientBCs = new CopyOnWriteArrayList<BundleContext>();
+    class MultiplexingServiceTracker extends ServiceTracker<Object, Object> {
+        List<BundleContext> clientBCs = new CopyOnWriteArrayList<BundleContext>();
 
         MultiplexingServiceTracker(BundleContext context, BundleContext clientContext, String filter) throws InvalidSyntaxException {
             super(context, context.createFilter(filter), null);
@@ -161,8 +161,8 @@ class GuardingFindHook implements FindHook, BundleListener {
         }
 
         void addBundleContext(BundleContext bc) {
-            if (bc.equals(myBundleContext)) {
-                // don't proxy anything for myself
+            if (bc.equals(myBundleContext) || bc.getBundle().getBundleId() == 0) {
+                // don't proxy anything for myself or the system bundle
                 return;
             }
             clientBCs.add(bc);
