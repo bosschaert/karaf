@@ -21,10 +21,14 @@ import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
 import org.osgi.framework.hooks.service.EventListenerHook;
 import org.osgi.framework.hooks.service.FindHook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // This bundle is quite low-level and benefits from starting early in the process. Therefore it does not depend
 // on Blueprint but rather uses direct OSGi framework APIs and Service Trackers...
 public class Activator implements BundleActivator {
+    private final Logger log = LoggerFactory.getLogger(getClass());
+
     GuardingEventHook guardingEventHook;
     GuardingFindHook guardingFindHook;
     GuardProxyCatalog guardProxyCatalog;
@@ -35,9 +39,12 @@ public class Activator implements BundleActivator {
         Filter securedServicesFilter;
         if (f == null) {
             // No services need to be secured
+            log.info("No role-based security for services as its system property is not set: " +
+                    GuardProxyCatalog.KARAF_SECURED_SERVICES_SYSPROP);
             return;
         } else {
             securedServicesFilter = context.createFilter(f);
+            log.info("Adding role-based security to services with filter: {}", f);
         }
 
         guardProxyCatalog = new GuardProxyCatalog(context);
@@ -53,7 +60,6 @@ public class Activator implements BundleActivator {
     public void stop(BundleContext context) throws Exception {
         guardingFindHook.close();
         guardingEventHook.close();
-
         guardProxyCatalog.close();
     }
 }
