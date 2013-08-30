@@ -209,6 +209,21 @@ public class GuardingFindHookTest {
                 GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
     }
 
+    @Test
+    public void testRoleBasedFindNotNeeded() throws Exception {
+        List<Filter> filtersCreated = new ArrayList<Filter>();
+        BundleContext hookBC = mockBundleContext(5L, filtersCreated);
+        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
+
+        Filter serviceFilter = FrameworkUtil.createFilter("(a=*)");
+        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
+
+        BundleContext clientBC = mockBundleContext(98765L);
+        filtersCreated.clear();
+        gfh.find(clientBC, null, "(a=b)", true, Collections.<ServiceReference<?>>emptyList());
+        assertEquals("The filter doesn't contain a role, so non-role filter should have been created", 0, filtersCreated.size());
+    }
+
     private Filter getNonRoleFilter(String roleFilter) throws Exception, InvalidSyntaxException {
         List<Filter> filtersCreated = new ArrayList<Filter>();
         BundleContext hookBC = mockBundleContext(5L, filtersCreated);
