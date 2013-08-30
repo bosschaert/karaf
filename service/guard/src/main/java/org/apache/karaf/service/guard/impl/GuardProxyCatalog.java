@@ -337,11 +337,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     private static void unregisterProxy(Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry) {
-        ProxyMapKey pmk = entry.getKey();
-
-        // The following line is needed because we call clientBC.getService() when the proxy is created
-        pmk.clientBundleContext.ungetService(pmk.serviceReference);
-
         ServiceRegistration<?> reg = entry.getValue().registration;
         if (reg != null) {
             reg.unregister();

@@ -145,6 +145,8 @@ public class GuardProxyCatalogTest {
     public void testHandleServiceUnregistering() throws Exception {
         BundleContext clientBC = openStrictMockBundleContext(mockBundle(12345));
         BundleContext client2BC = openStrictMockBundleContext(mockBundle(6));
+        EasyMock.replay(clientBC);
+        EasyMock.replay(client2BC);
 
         Hashtable<String, Object> props = new Hashtable<String, Object>();
         long originalServiceID = 12345678901234L;
@@ -155,11 +157,6 @@ public class GuardProxyCatalogTest {
         Hashtable<String, Object> props2 = new Hashtable<String, Object>();
         props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
         ServiceReference<?> anotherRef = mockServiceReference(props2);
-
-        EasyMock.expect(clientBC.ungetService(originalRef)).andReturn(false).once();
-        EasyMock.replay(clientBC);
-        EasyMock.expect(client2BC.ungetService(originalRef)).andReturn(false).once();
-        EasyMock.replay(client2BC);
 
         GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
 
@@ -203,8 +200,6 @@ public class GuardProxyCatalogTest {
 
         EasyMock.verify(proxyReg);
         EasyMock.verify(proxy2Reg);
-        EasyMock.verify(clientBC);
-        EasyMock.verify(client2BC);
     }
 
     @Test
@@ -212,12 +207,14 @@ public class GuardProxyCatalogTest {
         Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(clientBundle.getBundleId()).andReturn(12345L).anyTimes();
         BundleContext clientBC = openStrictMockBundleContext(clientBundle);
+        EasyMock.replay(clientBC);
         EasyMock.expect(clientBundle.getBundleContext()).andReturn(clientBC).anyTimes();
         EasyMock.replay(clientBundle);
 
         Bundle client2Bundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(client2Bundle.getBundleId()).andReturn(6L).anyTimes();
         BundleContext client2BC = openStrictMockBundleContext(client2Bundle);
+        EasyMock.replay(client2BC);
         EasyMock.expect(client2Bundle.getBundleContext()).andReturn(client2BC).anyTimes();
         EasyMock.replay(client2Bundle);
 
@@ -229,11 +226,6 @@ public class GuardProxyCatalogTest {
         Hashtable<String, Object> props2 = new Hashtable<String, Object>();
         props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
         ServiceReference<?> anotherRef = mockServiceReference(props2);
-
-        EasyMock.expect(clientBC.ungetService(originalRef)).andReturn(false).once();
-        EasyMock.expect(clientBC.ungetService(anotherRef)).andReturn(false).once();
-        EasyMock.replay(clientBC);
-        EasyMock.replay(client2BC);
 
         GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
 
@@ -272,8 +264,6 @@ public class GuardProxyCatalogTest {
 
         EasyMock.verify(proxyReg);
         EasyMock.verify(proxy2Reg);
-        EasyMock.verify(clientBC);
-        EasyMock.verify(client2BC);
     }
 
     @Test
@@ -897,7 +887,6 @@ public class GuardProxyCatalogTest {
         BundleContext clientBC = EasyMock.createMock(BundleContext.class);
         EasyMock.expect(clientBC.getBundle()).andReturn(clientBundle).anyTimes();
         EasyMock.expect(clientBC.getService(sr)).andReturn(testService).once();
-        EasyMock.expect(clientBC.ungetService(sr)).andReturn(true).once();
         EasyMock.replay(clientBC);
 
         assertEquals("Precondition", 0, gpc.proxyMap.size());
@@ -948,7 +937,6 @@ public class GuardProxyCatalogTest {
 
         gpc.close();
         EasyMock.verify(holder.registration); // checks that the unregister call was made
-        EasyMock.verify(clientBC); // checks that ungetService() is called
 
         return proxyProps;
     }
