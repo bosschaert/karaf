@@ -518,11 +518,12 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 return null;
             }
 
+            /*
             // The service properties against which is matched only contain the object class of the current
             // method, otherwise there can be contamination across ACLs
-            Dictionary<String, Object> serviceProps = copyProperties(serviceReference);
-            serviceProps.put(Constants.OBJECTCLASS, new String [] {m.getDeclaringClass().getName()});
-
+            //Dictionary<String, Object> serviceProps = copyProperties(serviceReference);
+            // serviceProps.put(Constants.OBJECTCLASS, new String [] {m.getDeclaringClass().getName()});
+            */
             String[] sig = new String[m.getParameterTypes().length];
             for (int i = 0; i < m.getParameterTypes().length; i++) {
                 sig[i] = m.getParameterTypes()[i].getName();
@@ -534,20 +535,20 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 Object guardFilter = config.getProperties().get("service.guard");
                 if (guardFilter instanceof String) {
                     Filter filter = myBundleContext.createFilter((String) guardFilter);
-                    if (filter.match(serviceProps)) {
+                    if (filter.match(serviceReference)) {
                         List<String> roles = ACLConfigurationParser.
                                 getRolesForInvocation(m.getName(), args, sig, config.getProperties());
                         if (roles != null) {
                             for (String role : roles) {
                                 if (currentUserHasRole(role)) {
-                                    log.trace("Allowed user with role {} to invoke service {} method {}", role, serviceProps, m);
+                                    log.trace("Allowed user with role {} to invoke service {} method {}", role, serviceReference, m);
                                     return null;
                                 }
                             }
 
                             // The current user does not have the required roles to invoke the service.
                             log.info("Current user does not have required roles ({}) for service {} method {} and/or arguments",
-                                    roles, serviceProps, m);
+                                    roles, serviceReference, m);
                             throw new SecurityException("Insufficient credentials.");
                         }
                     }

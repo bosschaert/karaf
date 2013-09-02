@@ -27,6 +27,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.security.Principal;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -500,6 +501,62 @@ public class GuardProxyCatalogTest {
                     assertEquals(-44L, ((TestObjectWithoutInterface) proxy).compute(44L));
                 }
 
+                return null;
+            }
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testCustomRole() throws Exception {
+        class MyRolePrincipal implements Principal {
+            @Override
+            public String getName() {
+                return "role1";
+            }
+        };
+
+        Dictionary<String, Object> c1 = new Hashtable<String, Object>();
+        c1.put(Constants.SERVICE_PID, "foobar");
+        c1.put("service.guard", "(objectClass=" + TestServiceAPI.class.getName() + ")");
+        c1.put("doit", MyRolePrincipal.class.getName() + ":role1");
+        BundleContext bc = mockConfigAdminBundleContext(c1);
+
+        final Object proxy = testCreateProxy(bc, new Class [] {TestServiceAPI.class}, new TestService());
+
+        Subject s1 = new Subject();
+        s1.getPrincipals().add(new RolePrincipal("role1"));
+        Subject.doAs(s1, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                try {
+                    ((TestServiceAPI) proxy).doit();
+                    fail("Should have prevented this invocation as the custom role is required");
+                } catch (SecurityException se) {
+                    // good
+                }
+                return null;
+            }
+        });
+
+
+        Subject s2 = new Subject();
+        s2.getPrincipals().add(new MyRolePrincipal());
+        Subject.doAs(s2, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                ((TestServiceAPI) proxy).doit(); // Should work, the custom role is there
+                return null;
+            }
+        });
+
+        Subject s3 = new Subject();
+        s3.getPrincipals().add(new MyRolePrincipal());
+        s3.getPrincipals().add(new RolePrincipal("role1"));
+        Subject.doAs(s3, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                ((TestServiceAPI) proxy).doit(); // Should work, the custom role is there
                 return null;
             }
         });
