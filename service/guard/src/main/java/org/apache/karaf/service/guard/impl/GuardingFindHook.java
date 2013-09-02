@@ -133,7 +133,7 @@ class GuardingFindHook implements FindHook, BundleListener {
 
     @Override
     public void bundleChanged(BundleEvent event) {
-        if (event.getType() != BundleEvent.STOPPING) {
+        if (event.getType() != BundleEvent.STOPPED) {
             return;
         }
 

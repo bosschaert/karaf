@@ -72,7 +72,9 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
     private static final Logger log = LoggerFactory.getLogger(GuardProxyCatalog.class);
 
-    private final BundleContext bundleContext;
+    private final BundleContext myBundleContext;
+    private final long myBundleID; // the bundlecontext isn't always available
+
     final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
     final ServiceTracker<ProxyManager, ProxyManager> proxyManagerTracker;
     final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
@@ -86,7 +88,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     GuardProxyCatalog(BundleContext bc) throws Exception {
         log.trace("Starting GuardProxyCatalog");
-        bundleContext = bc;
+        myBundleContext = bc;
+        myBundleID = bc.getBundle().getBundleId();
 
         // The service listener is used to update/unregister proxies if the backing service changes/goes away
         bc.addServiceListener(this);
@@ -117,8 +120,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         proxyManagerTracker.close();
         configAdminTracker.close();
 
-        bundleContext.removeBundleListener(this);
-        bundleContext.removeServiceListener(this);
+        myBundleContext.removeBundleListener(this);
+        myBundleContext.removeServiceListener(this);
 
         // Remove all proxy registrations
         for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
@@ -192,33 +195,47 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     @Override
     public void bundleChanged(BundleEvent event) {
-        /* */ // System
-        if (event.getType() != BundleEvent.STOPPING) {
+        if (event.getType() != BundleEvent.STOPPED) {
             return;
         }
 
         Bundle stoppingBundle = event.getBundle();
         long stoppingBundleID = stoppingBundle.getBundleId();
-        BundleContext stoppingBC = stoppingBundle.getBundleContext();
-        if (stoppingBC.equals(bundleContext) || stoppingBundleID == 0) {
+        if ((stoppingBundleID == myBundleID) || (stoppingBundleID == 0)) {
             // Don't react to this bundle stopping or the system bundle
             return;
         }
 
         for (Iterator<CreateProxyRunnable> i = createProxyQueue.iterator(); i.hasNext(); ) {
             CreateProxyRunnable cpr = i.next();
-            if (stoppingBC.equals(cpr.getClientBundleContext())) {
+            if (stoppingBundleID == cpr.getClientBundleID()) {
                 i.remove();
             }
         }
 
         for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
             Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry = i.next();
-            if (stoppingBC.getBundle().getBundleId() == entry.getKey().clientBundleID) {
+            if (stoppingBundleID == entry.getKey().clientBundleID) {
                 i.remove();
                 unregisterProxy(entry);
             }
         }
+    }
+
+    private String getEventType(BundleEvent event) {
+        switch(event.getType()) {
+        case BundleEvent.INSTALLED: return "INSTALLED";
+        case BundleEvent.RESOLVED: return "RESOLVED";
+        case BundleEvent.LAZY_ACTIVATION: return "LAZY_ACTIVATION";
+        case BundleEvent.STARTING: return "STARTING";
+        case BundleEvent.STARTED: return "STARTED";
+        case BundleEvent.STOPPING: return "STOPPING";
+        case BundleEvent.STOPPED: return "STOPPED";
+        case BundleEvent.UPDATED: return "UPDATED";
+        case BundleEvent.UNRESOLVED: return "UNRESOLVED";
+        case BundleEvent.UNINSTALLED: return "UNINSTALLED";
+        }
+        return null;
     }
 
     boolean isProxy(ServiceReference<?> sr) {
@@ -247,9 +264,10 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         }
 
         final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
+        final long clientBundleID = clientBC.getBundle().getBundleId();
         log.trace("Will create proxy of service {}({}) for client {}({})",
                 originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID,
-                clientBC.getBundle().getSymbolicName(), clientBC.getBundle().getBundleId());
+                clientBC.getBundle().getSymbolicName(), clientBundleID);
 
         // Instead of immediately creating the proxy, we add the code that creates the proxy to the proxyQueue.
         // This has 2 advantages:
@@ -258,8 +276,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         //     later. As soon as the Proxy Manager is available, the queue is emptied and the proxies created.
         CreateProxyRunnable cpr = new CreateProxyRunnable() {
             @Override
-            public BundleContext getClientBundleContext() {
-                return clientBC;
+            public long getClientBundleID() {
+                return clientBundleID;
             }
 
             @Override
@@ -386,7 +404,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         for (Configuration config : getServiceGuardConfigs()) {
             Object guardFilter = config.getProperties().get("service.guard");
             if (guardFilter instanceof String) {
-                Filter filter = bundleContext.createFilter((String) guardFilter);
+                Filter filter = myBundleContext.createFilter((String) guardFilter);
                 if (filter.match(serviceReference)) {
                     for (Enumeration<String> e = config.getProperties().keys(); e.hasMoreElements(); ) {
                         String key = e.nextElement();
@@ -515,7 +533,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             for (Configuration config : configs) {
                 Object guardFilter = config.getProperties().get("service.guard");
                 if (guardFilter instanceof String) {
-                    Filter filter = bundleContext.createFilter((String) guardFilter);
+                    Filter filter = myBundleContext.createFilter((String) guardFilter);
                     if (filter.match(serviceProps)) {
                         List<String> roles = ACLConfigurationParser.
                                 getRolesForInvocation(m.getName(), args, sig, config.getProperties());
@@ -583,7 +601,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         @Override
         public ProxyManager addingService(ServiceReference<ProxyManager> reference) {
             runProxyCreator = true;
-            final ProxyManager svc = bundleContext.getService(reference);
+            final ProxyManager svc = myBundleContext.getService(reference);
             if (proxyCreatorThread == null && svc != null) {
                 proxyCreatorThread = newProxyProducingThread(svc);
             }
@@ -629,7 +647,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     interface CreateProxyRunnable {
         long getOriginalServiceID();
-        BundleContext getClientBundleContext();
+        long getClientBundleID();
         void run(ProxyManager pm) throws Exception;
     }
 }

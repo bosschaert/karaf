@@ -72,7 +72,12 @@ public class GuardProxyCatalogTest {
 
     @Test
     public void testGuardProxyCatalog() throws Exception {
+        Bundle b = EasyMock.createMock(Bundle.class);
+        EasyMock.expect(b.getBundleId()).andReturn(9823L).anyTimes();
+        EasyMock.replay(b);
+
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
+        EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
         bc.addServiceListener(EasyMock.isA(ServiceListener.class));
         EasyMock.expectLastCall().once();
         bc.addBundleListener(EasyMock.isA(BundleListener.class));
@@ -261,14 +266,14 @@ public class GuardProxyCatalogTest {
         assertEquals("Precondition", 2, gpc.createProxyQueue.size());
 
         gpc.bundleChanged(new BundleEvent(BundleEvent.STARTED, clientBundle));
-        assertEquals("Non-STOPPING events should be ignored", 3, gpc.proxyMap.size());
-        assertEquals("Non-STOPPING events should be ignored", 2, gpc.createProxyQueue.size());
+        assertEquals("Non-STOPPED events should be ignored", 3, gpc.proxyMap.size());
+        assertEquals("Non-STOPPED events should be ignored", 2, gpc.createProxyQueue.size());
 
-        gpc.bundleChanged(new BundleEvent(BundleEvent.STOPPING, clientBundle));
+        gpc.bundleChanged(new BundleEvent(BundleEvent.STOPPED, clientBundle));
         assertEquals(1, gpc.proxyMap.size());
         assertSame(client2BC.getBundle().getBundleId(), gpc.proxyMap.keySet().iterator().next().clientBundleID);
         assertEquals(1, gpc.createProxyQueue.size());
-        assertSame(client2BC, gpc.createProxyQueue.iterator().next().getClientBundleContext());
+        assertSame(client2BC.getBundle().getBundleId(), gpc.createProxyQueue.iterator().next().getClientBundleID());
 
         EasyMock.verify(proxyReg);
         EasyMock.verify(proxy2Reg);
@@ -510,7 +515,12 @@ public class GuardProxyCatalogTest {
         ServiceReference pmSref2 = EasyMock.createMock(ServiceReference.class);
         EasyMock.replay(pmSref2);
 
+        Bundle b = EasyMock.createMock(Bundle.class);
+        EasyMock.expect(b.getBundleId()).andReturn(23992734L).anyTimes();
+        EasyMock.replay(b);
+
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
+        EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
         EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
             @Override
             public Filter answer() throws Throwable {
@@ -1130,6 +1140,12 @@ public class GuardProxyCatalogTest {
     }
 
     private BundleContext mockBundleContext(Bundle b) throws InvalidSyntaxException {
+        if (b == null) {
+            b = EasyMock.createNiceMock(Bundle.class);
+            EasyMock.expect(b.getBundleId()).andReturn(89334L);
+            EasyMock.replay(b);
+        }
+
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
         EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
             @Override
@@ -1137,9 +1153,7 @@ public class GuardProxyCatalogTest {
                 return FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
             }
         }).anyTimes();
-        if (b != null) {
-            EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
-        }
+        EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
         EasyMock.replay(bc);
         return bc;
     }
@@ -1179,7 +1193,12 @@ public class GuardProxyCatalogTest {
         final ServiceReference caSR = EasyMock.createMock(ServiceReference.class);
         EasyMock.replay(caSR);
 
+        Bundle b = EasyMock.createMock(Bundle.class);
+        EasyMock.expect(b.getBundleId()).andReturn(877342449L).anyTimes();
+        EasyMock.replay(b);
+
         BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
+        EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
         EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
             @Override
             public Filter answer() throws Throwable {
@@ -1232,21 +1251,21 @@ public class GuardProxyCatalogTest {
 
     class MockCreateProxyRunnable implements CreateProxyRunnable {
         private final long orgServiceID;
-        private final BundleContext clientBundleContext;
+        private final long clientBundleID;
 
         public MockCreateProxyRunnable(long serviceID) {
             orgServiceID = serviceID;
-            clientBundleContext = null;
+            clientBundleID = -1;
         }
 
         public MockCreateProxyRunnable(BundleContext clientBC) {
             orgServiceID = -1;
-            clientBundleContext = clientBC;
+            clientBundleID = clientBC.getBundle().getBundleId();
         }
 
         @Override
-        public BundleContext getClientBundleContext() {
-            return clientBundleContext;
+        public long getClientBundleID() {
+            return clientBundleID;
         }
 
         @Override

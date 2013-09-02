@@ -311,7 +311,7 @@ public class GuardingFindHookTest {
         assertEquals(Collections.singletonList(clientBC), mst2.clientBCs);
         HashSet<String> expectedFilters = new HashSet<String>(gfh.trackers.keySet());
 
-        gfh.bundleChanged(new BundleEvent(BundleEvent.STOPPING, client2BC.getBundle()));
+        gfh.bundleChanged(new BundleEvent(BundleEvent.STOPPED, client2BC.getBundle()));
         assertEquals(expectedFilters, gfh.trackers.keySet());
         for (MultiplexingServiceTracker m : gfh.trackers.values()) {
             assertEquals("Only one bundle should be tracked by this MST", 1, m.clientBCs.size());
@@ -326,7 +326,7 @@ public class GuardingFindHookTest {
             assertTrue("Should still be open", m.getTrackingCount() >= 0);
         }
 
-        gfh.bundleChanged(new BundleEvent(BundleEvent.STOPPING, clientBC.getBundle()));
+        gfh.bundleChanged(new BundleEvent(BundleEvent.STOPPED, clientBC.getBundle()));
         assertEquals("Tracker should be closed", -1, mst.getTrackingCount());
         assertEquals("Tracker should be closed", -1, mst2.getTrackingCount());
         assertEquals("No trackers should be left", 0, gfh.trackers.size());

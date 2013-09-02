@@ -25,6 +25,7 @@ import java.util.Properties;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
 import org.junit.Test;
+import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
@@ -42,7 +43,12 @@ public class ActivatorTest {
 
         try {
             System.setProperty(GuardProxyCatalog.KARAF_SECURED_SERVICES_SYSPROP, "(foo=bar)");
+            Bundle b = EasyMock.createMock(Bundle.class);
+            EasyMock.expect(b.getBundleId()).andReturn(768L).anyTimes();
+            EasyMock.replay(b);
+
             BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
+            EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
             EasyMock.expect(bc.createFilter(EasyMock.anyObject(String.class))).andAnswer(new IAnswer<Filter>() {
                 @Override
                 public Filter answer() throws Throwable {
