@@ -84,8 +84,8 @@ public class GuardingFindHookTest {
         assertEquals("The service should have caused a proxy creation", 1, gpc.proxyMap.size());
         assertEquals("A proxy creation job should have been created", 1, gpc.createProxyQueue.size());
         ProxyMapKey pmk = gpc.proxyMap.keySet().iterator().next();
-        assertEquals(clientBC, pmk.clientBundleContext);
-        assertEquals(sref2, pmk.serviceReference);
+        assertEquals(clientBC.getBundle().getBundleId(), pmk.clientBundleID);
+        assertEquals(sref2.getProperty(Constants.SERVICE_ID), pmk.originalServiceID);
 
         Collection<ServiceReference<?>> refs3 = new ArrayList<ServiceReference<?>>();
         refs3.add(sref2);

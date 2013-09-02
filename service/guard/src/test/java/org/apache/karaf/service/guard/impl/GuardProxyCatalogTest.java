@@ -141,6 +141,7 @@ public class GuardProxyCatalogTest {
         assertFalse(gpc.isProxyFor(mockServiceReference(new Hashtable<String, Object>()), testBC));
     }
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     @Test
     public void testHandleServiceUnregistering() throws Exception {
         BundleContext clientBC = openStrictMockBundleContext(mockBundle(12345));
@@ -161,6 +162,8 @@ public class GuardProxyCatalogTest {
         GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
 
         ServiceRegistration<?> proxyReg = EasyMock.createMock(ServiceRegistration.class);
+        EasyMock.expect(proxyReg.getReference()).andReturn((ServiceReference)
+                mockServiceReference(props)).anyTimes();
         proxyReg.unregister();
         EasyMock.expectLastCall().once();
         EasyMock.replay(proxyReg);
@@ -194,7 +197,7 @@ public class GuardProxyCatalogTest {
 
         gpc.serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, originalRef));
         assertEquals("The two proxies for this service should have been removed", 1, gpc.proxyMap.size());
-        assertSame(anotherRef, gpc.proxyMap.keySet().iterator().next().serviceReference);
+        assertEquals(anotherRef.getProperty(Constants.SERVICE_ID), gpc.proxyMap.keySet().iterator().next().originalServiceID);
         assertEquals("The create proxy job for this service should have been removed", 1, gpc.createProxyQueue.size());
         assertEquals(777, gpc.createProxyQueue.iterator().next().getOriginalServiceID());
 
@@ -202,6 +205,7 @@ public class GuardProxyCatalogTest {
         EasyMock.verify(proxy2Reg);
     }
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     @Test
     public void testHandleClientBundleStopping() throws Exception {
         Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
@@ -230,6 +234,8 @@ public class GuardProxyCatalogTest {
         GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
 
         ServiceRegistration<?> proxyReg = EasyMock.createMock(ServiceRegistration.class);
+        EasyMock.expect(proxyReg.getReference()).andReturn((ServiceReference)
+                mockServiceReference(props)).anyTimes();
         proxyReg.unregister();
         EasyMock.expectLastCall().once();
         EasyMock.replay(proxyReg);
@@ -237,6 +243,8 @@ public class GuardProxyCatalogTest {
         srh.registration = proxyReg;
 
         ServiceRegistration<?> proxy2Reg = EasyMock.createMock(ServiceRegistration.class);
+        EasyMock.expect(proxy2Reg.getReference()).andReturn((ServiceReference)
+                mockServiceReference(props2)).anyTimes();
         proxy2Reg.unregister();
         EasyMock.expectLastCall().once();
         EasyMock.replay(proxy2Reg);
@@ -258,7 +266,7 @@ public class GuardProxyCatalogTest {
 
         gpc.bundleChanged(new BundleEvent(BundleEvent.STOPPING, clientBundle));
         assertEquals(1, gpc.proxyMap.size());
-        assertSame(client2BC, gpc.proxyMap.keySet().iterator().next().clientBundleContext);
+        assertSame(client2BC.getBundle().getBundleId(), gpc.proxyMap.keySet().iterator().next().clientBundleID);
         assertEquals(1, gpc.createProxyQueue.size());
         assertSame(client2BC, gpc.createProxyQueue.iterator().next().getClientBundleContext());
 
