@@ -32,6 +32,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -44,6 +45,7 @@ import org.apache.aries.proxy.InvocationListener;
 import org.apache.aries.proxy.ProxyManager;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.apache.karaf.service.guard.tools.ACLConfigurationParser;
+import org.apache.karaf.service.guard.tools.ACLConfigurationParser.Specificity;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.BundleEvent;
@@ -518,16 +520,13 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 return null;
             }
 
-            /*
-            // The service properties against which is matched only contain the object class of the current
-            // method, otherwise there can be contamination across ACLs
-            //Dictionary<String, Object> serviceProps = copyProperties(serviceReference);
-            // serviceProps.put(Constants.OBJECTCLASS, new String [] {m.getDeclaringClass().getName()});
-            */
             String[] sig = new String[m.getParameterTypes().length];
             for (int i = 0; i < m.getParameterTypes().length; i++) {
                 sig[i] = m.getParameterTypes()[i].getName();
             }
+
+            // The ordering of the keys is important
+            TreeMap<Specificity, List<String>> roleMappings = new TreeMap<ACLConfigurationParser.Specificity, List<String>>();
 
             // This can probably be optimized. Maybe we can cache the config object relevant instead of
             // walking through all of the ones that have 'service.guard'.
@@ -536,26 +535,37 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 if (guardFilter instanceof String) {
                     Filter filter = myBundleContext.createFilter((String) guardFilter);
                     if (filter.match(serviceReference)) {
-                        List<String> roles = ACLConfigurationParser.
-                                getRolesForInvocation(m.getName(), args, sig, config.getProperties());
-                        if (roles != null) {
-                            for (String role : roles) {
-                                if (currentUserHasRole(role)) {
-                                    log.trace("Allowed user with role {} to invoke service {} method {}", role, serviceReference, m);
-                                    return null;
-                                }
+                        List<String> roles = new ArrayList<String>();
+                        Specificity s = ACLConfigurationParser.
+                                getRolesForInvocation(m.getName(), args, sig, config.getProperties(), roles);
+                        if (s != Specificity.NO_MATCH) {
+                            roleMappings.put(s, roles);
+                            if (s == Specificity.ARGUMENT_MATCH) {
+                                // No more specific mapping can be found
+                                break;
                             }
-
-                            // The current user does not have the required roles to invoke the service.
-                            log.info("Current user does not have required roles ({}) for service {} method {} and/or arguments",
-                                    roles, serviceReference, m);
-                            throw new SecurityException("Insufficient credentials.");
                         }
                     }
                 }
             }
 
-            return null;
+            if (roleMappings.size() == 0) {
+                // No mappings for this method, anyone can invoke
+                return null;
+            }
+
+            List<String> roles = roleMappings.values().iterator().next();
+            for (String role : roles) {
+                if (currentUserHasRole(role)) {
+                    log.trace("Allowed user with role {} to invoke service {} method {}", role, serviceReference, m);
+                    return null;
+                }
+            }
+
+            // The current user does not have the required roles to invoke the service.
+            log.info("Current user does not have required roles ({}) for service {} method {} and/or arguments",
+                    roles, serviceReference, m);
+            throw new SecurityException("Insufficient credentials.");
         }
 
 

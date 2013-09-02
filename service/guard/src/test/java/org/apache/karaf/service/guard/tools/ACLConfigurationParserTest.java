@@ -17,14 +17,15 @@
 package org.apache.karaf.service.guard.tools;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Dictionary;
 import java.util.Hashtable;
+import java.util.List;
 
-import org.apache.karaf.service.guard.tools.ACLConfigurationParser;
+import org.apache.karaf.service.guard.tools.ACLConfigurationParser.Specificity;
 import org.junit.Test;
 
 public class ACLConfigurationParserTest {
@@ -48,24 +49,56 @@ public class ACLConfigurationParserTest {
         config.put("bar(java.lang.String, int)", "rd");
         config.put("bar(java.lang.String)", "re");
         config.put("bar", "rf");
+        config.put("ba*", "rg #Wildcard");
 
-        assertEquals(Arrays.asList("r1", "r2"), ACLConfigurationParser.getRolesForInvocation(
-                "foo", new Object [] {}, new String [] {}, config));
-        assertEquals(Arrays.asList("r1", "r2"), ACLConfigurationParser.getRolesForInvocation(
-                "foo", new Object [] {"test"}, new String [] {"java.lang.String"}, config));
-        assertNull(ACLConfigurationParser.getRolesForInvocation(
-                "test", new Object [] {}, new String [] {}, config));
-        assertEquals(Arrays.asList("ra"), ACLConfigurationParser.getRolesForInvocation(
-                "bar", new Object [] {"aa", 42}, new String [] {"java.lang.String", "int"}, config));
-        assertEquals(Arrays.asList("rb"), ACLConfigurationParser.getRolesForInvocation(
-                "bar", new Object [] {"bb", 42}, new String [] {"java.lang.String", "int"}, config));
-        assertEquals(Arrays.asList("rc"), ACLConfigurationParser.getRolesForInvocation(
-                "bar", new Object [] {"cc", 17}, new String [] {"java.lang.String", "int"}, config));
-        assertEquals(Arrays.asList("rd"), ACLConfigurationParser.getRolesForInvocation(
-                "bar", new Object [] {"aaa", 42}, new String [] {"java.lang.String", "int"}, config));
-        assertEquals(Arrays.asList("re"), ACLConfigurationParser.getRolesForInvocation(
-                "bar", new Object [] {"aa"}, new String [] {"java.lang.String"}, config));
-        assertEquals(Arrays.asList("rf"), ACLConfigurationParser.getRolesForInvocation(
-                "bar", new Object [] {42}, new String [] {"int"}, config));
+        List<String> roles1 = new ArrayList<String>();
+        assertEquals(Specificity.NAME_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("foo", new Object [] {}, new String [] {}, config, roles1));
+        assertEquals(Arrays.asList("r1", "r2"), roles1);
+
+        List<String> roles2 = new ArrayList<String>();
+        assertEquals(Specificity.NAME_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("foo", new Object [] {"test"}, new String [] {"java.lang.String"}, config, roles2));
+        assertEquals(Arrays.asList("r1", "r2"), roles2);
+
+        List<String> roles3 = new ArrayList<String>();
+        assertEquals(Specificity.NO_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("test", new Object [] {}, new String [] {}, config, roles3));
+        assertEquals(0, roles3.size());
+
+        List<String> roles4 = new ArrayList<String>();
+        assertEquals(Specificity.ARGUMENT_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("bar", new Object [] {"aa", 42}, new String [] {"java.lang.String", "int"}, config, roles4));
+        assertEquals(Arrays.asList("ra"), roles4);
+
+        List<String> roles5 = new ArrayList<String>();
+        assertEquals(Specificity.ARGUMENT_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("bar", new Object [] {"bb", 42}, new String [] {"java.lang.String", "int"}, config, roles5));
+        assertEquals(Arrays.asList("rb"), roles5);
+
+        List<String> roles6 = new ArrayList<String>();
+        assertEquals(Specificity.ARGUMENT_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("bar", new Object [] {"cc", 17}, new String [] {"java.lang.String", "int"}, config, roles6));
+        assertEquals(Arrays.asList("rc"), roles6);
+
+        List<String> roles7 = new ArrayList<String>();
+        assertEquals(Specificity.SIGNATURE_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("bar", new Object [] {"aaa", 42}, new String [] {"java.lang.String", "int"}, config, roles7));
+        assertEquals(Arrays.asList("rd"), roles7);
+
+        List<String> roles8 = new ArrayList<String>();
+        assertEquals(Specificity.SIGNATURE_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("bar", new Object [] {"aa"}, new String [] {"java.lang.String"}, config, roles8));
+        assertEquals(Arrays.asList("re"), roles8);
+
+        List<String> roles9 = new ArrayList<String>();
+        assertEquals(Specificity.NAME_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("bar", new Object [] {42}, new String [] {"int"}, config, roles9));
+        assertEquals(Arrays.asList("rf"), roles9);
+
+        List<String> roles10 = new ArrayList<String>();
+        assertEquals(Specificity.WILDCARD_MATCH,
+                ACLConfigurationParser.getRolesForInvocation("barr", new Object [] {42}, new String [] {"int"}, config, roles10));
+        assertEquals(Arrays.asList("rg"), roles10);
     }
 }

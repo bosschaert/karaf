@@ -26,6 +26,9 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 
 public class ACLConfigurationParser {
+    // Note that the order of the enums is important. Needs to be from most specific to least specific
+    public enum Specificity { ARGUMENT_MATCH, SIGNATURE_MATCH, NAME_MATCH, WILDCARD_MATCH, NO_MATCH };
+
     /**
      * Returns the roles that can invoke the given operation. This is determined by matching the
      * operation details against configuration provided.<p/>
@@ -66,26 +69,31 @@ public class ACLConfigurationParser {
      * @return A list of roles (which may be empty) if a matching configuration item has been found.
      * {@code null} if no matching configuration was found.
      */
-    public static List<String> getRolesForInvocation(String methodName, Object[] params, String[] signature,
-            Dictionary<String, Object> config) {
+    public static Specificity getRolesForInvocation(String methodName, Object[] params, String[] signature,
+            Dictionary<String, Object> config, List<String> addToRoles) {
         Dictionary<String, Object> properties = trimKeys(config);
 
-        List<String> roles = getRolesBasedOnSignature(methodName, params, signature, properties);
-        if (roles != null) {
-            return roles;
+        Specificity s = getRolesBasedOnSignature(methodName, params, signature, properties, addToRoles);
+        if (s != Specificity.NO_MATCH) {
+            return s;
         }
 
-        roles = getRolesBasedOnSignature(methodName, params, null, properties);
-        if (roles != null) {
-            return roles;
+        s = getRolesBasedOnSignature(methodName, params, null, properties, addToRoles);
+        if (s != Specificity.NO_MATCH) {
+            return s;
         }
 
-        return getMethodNameWildcardRoles(properties, methodName);
+        List<String> roles = getMethodNameWildcardRoles(properties, methodName);
+        if (roles != null) {
+            addToRoles.addAll(roles);
+            return Specificity.WILDCARD_MATCH;
+        } else {
+            return Specificity.NO_MATCH;
+        }
     }
 
-    private static List<String> getRolesBasedOnSignature(String methodName, Object[] params, String[] signature,
-            Dictionary<String, Object> properties) {
-        List<String> roles = new ArrayList<String>();
+    private static Specificity getRolesBasedOnSignature(String methodName, Object[] params, String[] signature,
+            Dictionary<String, Object> properties, List<String> roles) {
 
         boolean foundExactOrRegExp = false;
         if (params != null) {
@@ -104,7 +112,7 @@ public class ACLConfigurationParser {
             if (foundExactOrRegExp) {
                 // Since we have the actual parameters we can match them and if they do we won't look for any
                 // more generic rules...
-                return roles;
+                return Specificity.ARGUMENT_MATCH;
             }
         } else {
             // This is used in the case where parameters aren't known yet and the system wants to find out
@@ -119,14 +127,15 @@ public class ACLConfigurationParser {
         Object signatureRoles = properties.get(getSignature(methodName, signature));
         if (signatureRoles instanceof String) {
             roles.addAll(parseRoles((String) signatureRoles));
-            return roles;
+            return signature == null ? Specificity.NAME_MATCH : Specificity.SIGNATURE_MATCH;
         }
 
         if (foundExactOrRegExp) {
+            // TODO can we get rid of this?
             // We can get here if params == null and there were exact and/or regexp rules but no signature rules
-            return roles;
+            return Specificity.ARGUMENT_MATCH;
         }
-        return null;
+        return Specificity.NO_MATCH;
     }
 
     private static Dictionary<String, Object> trimKeys(Dictionary<String, Object> properties) {
