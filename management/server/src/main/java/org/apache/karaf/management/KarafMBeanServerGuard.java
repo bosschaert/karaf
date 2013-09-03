@@ -40,6 +40,7 @@ import javax.security.auth.Subject;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.apache.karaf.management.boot.KarafMBeanServerBuilder;
 import org.apache.karaf.service.guard.tools.ACLConfigurationParser;
+import org.apache.karaf.service.guard.tools.ACLConfigurationParser.Specificity;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
@@ -249,9 +250,11 @@ public class KarafMBeanServerGuard implements InvocationHandler {
             if (allPids.contains(pid)) {
                 Configuration config = configAdmin.getConfiguration(pid);
 
-                List<String> roles = ACLConfigurationParser.getRolesForInvocation(methodName, params, signature, config.getProperties());
-                if (roles != null)
+                List<String> roles = new ArrayList<String>();
+                Specificity s = ACLConfigurationParser.getRolesForInvocation(methodName, params, signature, config.getProperties(), roles);
+                if (s != Specificity.NO_MATCH) {
                     return roles;
+                }
             }
         }
         return Collections.emptyList();

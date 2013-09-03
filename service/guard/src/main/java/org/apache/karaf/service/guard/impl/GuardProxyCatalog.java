@@ -525,7 +525,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 sig[i] = m.getParameterTypes()[i].getName();
             }
 
-            // The ordering of the keys is important
+            // The ordering of the keys is important because the first value when iterating has the highest specificity
             TreeMap<Specificity, List<String>> roleMappings = new TreeMap<ACLConfigurationParser.Specificity, List<String>>();
 
             // This can probably be optimized. Maybe we can cache the config object relevant instead of
