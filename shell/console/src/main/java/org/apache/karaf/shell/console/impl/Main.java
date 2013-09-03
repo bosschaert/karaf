@@ -18,7 +18,15 @@
  */
 package org.apache.karaf.shell.console.impl;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.io.Reader;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -28,16 +36,17 @@ import java.util.Enumeration;
 import java.util.List;
 
 import jline.Terminal;
-import org.apache.karaf.shell.commands.Action;
-import org.apache.karaf.shell.commands.Command;
-import org.apache.karaf.shell.commands.CommandException;
-import org.apache.karaf.shell.commands.basic.AbstractCommand;
+
 import org.apache.felix.gogo.runtime.CommandNotFoundException;
 import org.apache.felix.gogo.runtime.CommandProcessorImpl;
 import org.apache.felix.gogo.runtime.threadio.ThreadIOImpl;
 import org.apache.felix.service.command.CommandSession;
 import org.apache.felix.service.command.Function;
 import org.apache.felix.service.threadio.ThreadIO;
+import org.apache.karaf.shell.commands.Action;
+import org.apache.karaf.shell.commands.Command;
+import org.apache.karaf.shell.commands.CommandException;
+import org.apache.karaf.shell.commands.basic.AbstractCommand;
 import org.apache.karaf.shell.console.NameScoping;
 import org.apache.karaf.shell.console.impl.jline.ConsoleImpl;
 import org.apache.karaf.shell.console.impl.jline.TerminalFactory;
@@ -230,7 +239,7 @@ public class Main {
      * @throws Exception
      */
     protected ConsoleImpl createConsole(CommandProcessorImpl commandProcessor, InputStream in, PrintStream out, PrintStream err, Terminal terminal) throws Exception {
-        return new ConsoleImpl(commandProcessor, in, out, err, terminal, null, null);
+        return new ConsoleImpl(commandProcessor, in, out, err, terminal, null, null, null);
     }
 
     /**
