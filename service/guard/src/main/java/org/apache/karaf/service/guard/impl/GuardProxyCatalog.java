@@ -224,22 +224,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         }
     }
 
-    private String getEventType(BundleEvent event) {
-        switch(event.getType()) {
-        case BundleEvent.INSTALLED: return "INSTALLED";
-        case BundleEvent.RESOLVED: return "RESOLVED";
-        case BundleEvent.LAZY_ACTIVATION: return "LAZY_ACTIVATION";
-        case BundleEvent.STARTING: return "STARTING";
-        case BundleEvent.STARTED: return "STARTED";
-        case BundleEvent.STOPPING: return "STOPPING";
-        case BundleEvent.STOPPED: return "STOPPED";
-        case BundleEvent.UPDATED: return "UPDATED";
-        case BundleEvent.UNRESOLVED: return "UNRESOLVED";
-        case BundleEvent.UNINSTALLED: return "UNINSTALLED";
-        }
-        return null;
-    }
-
     boolean isProxy(ServiceReference<?> sr) {
         return sr.getProperty(PROXY_FOR_BUNDLE_KEY) != null;
     }
@@ -358,7 +342,13 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 Dictionary<String, Object> p = proxyProperties(originalRef, clientBC.getBundle().getBundleId(), orgServiceID);
 
                 List<String> roles = getServiceInvocationRoles(originalRef);
-                p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+
+                if (roles != null) {
+                    p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+                } else {
+                    // In this case there are no roles defined for the service so anyone can invoke it
+                    p.remove(SERVICE_GUARD_ROLES_PROPERTY);
+                }
                 return p;
             }
         };
@@ -399,6 +389,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     // Returns what roles can possibly ever invoke this service. Note that not every invocation may be successful
     // as there can be different roles for different methos and also roles based on arguments passed in.
     private List<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
+        boolean definitionFound = false;
         List<String> allRoles = new ArrayList<String>();
 
         // This can probably be optimized. Maybe we can cache the config object relevant instead of
@@ -408,6 +399,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             if (guardFilter instanceof String) {
                 Filter filter = myBundleContext.createFilter((String) guardFilter);
                 if (filter.match(serviceReference)) {
+                    definitionFound = true;
                     for (Enumeration<String> e = config.getProperties().keys(); e.hasMoreElements(); ) {
                         String key = e.nextElement();
                         String bareKey = key;
@@ -430,7 +422,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 }
             }
         }
-        return allRoles;
+        return definitionFound ? allRoles : null;
     }
 
     // Ensures that it never returns null
@@ -527,6 +519,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
             // The ordering of the keys is important because the first value when iterating has the highest specificity
             TreeMap<Specificity, List<String>> roleMappings = new TreeMap<ACLConfigurationParser.Specificity, List<String>>();
+            boolean foundMatchingConfig = false;
 
             // This can probably be optimized. Maybe we can cache the config object relevant instead of
             // walking through all of the ones that have 'service.guard'.
@@ -535,6 +528,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 if (guardFilter instanceof String) {
                     Filter filter = myBundleContext.createFilter((String) guardFilter);
                     if (filter.match(serviceReference)) {
+                        foundMatchingConfig = true;
                         List<String> roles = new ArrayList<String>();
                         Specificity s = ACLConfigurationParser.
                                 getRolesForInvocation(m.getName(), args, sig, config.getProperties(), roles);
@@ -549,13 +543,18 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 }
             }
 
-            if (roleMappings.size() == 0) {
-                // No mappings for this method, anyone can invoke
+            if (!foundMatchingConfig) {
+                // No mappings for this service, anyone can invoke
                 return null;
             }
 
-            List<String> roles = roleMappings.values().iterator().next();
-            for (String role : roles) {
+            if (roleMappings.size() == 0) {
+                log.info("Service {} has role mapping, but assigned no roles to method {}", serviceReference, m);
+                throw new SecurityException("Insufficient credentials.");
+            }
+
+            List<String> allowedRoles = roleMappings.values().iterator().next();
+            for (String role : allowedRoles) {
                 if (currentUserHasRole(role)) {
                     log.trace("Allowed user with role {} to invoke service {} method {}", role, serviceReference, m);
                     return null;
@@ -564,7 +563,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
             // The current user does not have the required roles to invoke the service.
             log.info("Current user does not have required roles ({}) for service {} method {} and/or arguments",
-                    roles, serviceReference, m);
+                    allowedRoles, serviceReference, m);
             throw new SecurityException("Insufficient credentials.");
         }
 
