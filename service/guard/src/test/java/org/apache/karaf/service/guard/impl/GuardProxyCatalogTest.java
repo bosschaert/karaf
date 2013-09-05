@@ -431,6 +431,8 @@ public class GuardProxyCatalogTest {
                 return "Doing it";
             }
         });
+        testCreateProxy(Object.class, new ClassWithFinalMethod());
+        testCreateProxy(Object.class, new ClassWithPrivateMethod());
     }
 
     @Test
@@ -1719,4 +1721,15 @@ public class GuardProxyCatalogTest {
     private class PrivateTestServiceNoDirectInterfaces extends PrivateTestService {}
 
     public final class FinalTestService extends AbstractService implements TestServiceAPI {}
+
+    public class ClassWithFinalMethod {
+        public void foo() {}
+        public final String bar() { return "Bar"; }
+    }
+
+    public class ClassWithPrivateMethod {
+        public void foo() {}
+        @SuppressWarnings("unused")
+        private void bar() {}
+    }
 }

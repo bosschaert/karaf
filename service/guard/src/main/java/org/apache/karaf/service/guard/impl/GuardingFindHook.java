@@ -102,7 +102,7 @@ class GuardingFindHook implements FindHook, BundleListener {
     private void addNonRoleServiceTracker(final BundleContext context, final String filter) {
         // Replace the condition on the roles with a condition on services that don't specify the role at all
         String nonRoleFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("@");
-        nonRoleFilter = nonRoleFilter.replaceAll("\\(\\s*[@]\\s*\\)", "@");
+        nonRoleFilter = nonRoleFilter.replaceAll("\\(\\s*[@]\\s*\\)", "@"); // TODO clean up
         nonRoleFilter = nonRoleFilter.replaceAll("[@]+", "(!(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=*))");
 
         // Find/create a new MST. This tracker will track the filter for a number of bundle contexts.
@@ -112,6 +112,7 @@ class GuardingFindHook implements FindHook, BundleListener {
             mst = trackers.get(nonRoleFilter);
             if (mst == null) {
                 try {
+                    /* */ System.out.println("@@@ New ServiceTracker: " + nonRoleFilter);
                     mst = new MultiplexingServiceTracker(myBundleContext, context, nonRoleFilter);
                     trackers.put(nonRoleFilter, mst);
                     newTracker = true;
@@ -183,9 +184,11 @@ class GuardingFindHook implements FindHook, BundleListener {
             // So there is a new service that matches the filter.
             // We now need to make sure that there is are matching proxies for it too
             // to that all the interested clients can see it...
-            for (BundleContext bc : clientBCs) {
-                if (servicesFilter.match(reference)) {
-                    guardProxyCatalog.proxyIfNotAlreadyProxied(reference, bc);
+            if (servicesFilter.match(reference)) {
+                for (BundleContext bc : clientBCs) {
+                    // /* */ System.out.println("New matching service: " + reference.getProperty(Constants.SERVICE_ID));
+                    // guardProxyCatalog.proxyIfNotAlreadyProxied(reference, bc);
+                    guardProxyCatalog.handleProxificationForHook(reference, bc);
                 }
             }
             return super.addingService(reference);

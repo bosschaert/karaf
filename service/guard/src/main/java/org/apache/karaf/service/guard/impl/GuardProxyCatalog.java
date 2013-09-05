@@ -293,7 +293,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC)  {
-        if (isProxy(originalRef)) {
+        if (isProxy(originalRef)) { // TODO this can go since it's only invoked from handleProxificationForHook
             return;
         }
 
@@ -311,6 +311,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return;
         }
 
+        // /* */ System.out.println("+++Create proxy of service " + orgServiceID + " for client " + clientBundleID);
         log.trace("Will create proxy of service {}({}) for client {}({})",
                 originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID,
                 clientBC.getBundle().getSymbolicName(), clientBundleID);
@@ -333,6 +334,11 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
             @Override
             public void run(ProxyManager pm) throws Exception {
+//                /* */
+//                if (clientBundleID == 40) {
+//                    System.out.println("Created proxy for bundle 40");
+//                }
+//                /* */
                 List<String> objectClassProperty =
                         new ArrayList<String>(Arrays.asList((String[]) originalRef.getProperty(Constants.OBJECTCLASS)));
 
@@ -367,6 +373,14 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                         // Do not attempt to proxy private, package-default, final,  anonymous or local classes
                         i.remove();
                         objectClassProperty.remove(cls.getName());
+                    } else {
+                        for (Method m : cls.getDeclaredMethods()) {
+                            if ((m.getModifiers() & Modifier.FINAL) > 0) {
+                                i.remove();
+                                objectClassProperty.remove(cls.getName());
+                                break;
+                            }
+                        }
                     }
                 }
 
@@ -382,6 +396,12 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                         objectClassProperty.toArray(new String [] {}), proxyService, proxyPropertiesRoles());
 
                 Dictionary<String, Object> actualProxyProps = copyProperties(proxyReg.getReference());
+//                /* */
+//                if (clientBundleID == 40) {
+//                    System.out.println("Created proxy with properties: " + actualProxyProps);
+//                }
+//                /* */
+
                 log.info("Created proxy of service {} under {} with properties {}",
                         orgServiceID, actualProxyProps.get(Constants.OBJECTCLASS), actualProxyProps);
 
