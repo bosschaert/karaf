@@ -214,6 +214,52 @@ public class GuardProxyCatalogTest {
         assertTrue(gpc.needsProxy(sref));
     }
 
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testHandleProxificationForHook() throws Exception {
+        Dictionary<String, Object> config = new Hashtable<String, Object>();
+        config.put(Constants.SERVICE_PID, GuardProxyCatalog.SERVICE_ACL_PREFIX + "foo");
+        config.put(GuardProxyCatalog.SERVICE_GUARD_KEY, "(a>=5)");
+        BundleContext bc = mockConfigAdminBundleContext(config);
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        props.put(Constants.SERVICE_ID, 12L);
+        props.put("c", "d");
+        ServiceReference<?> sref = mockServiceReference(props);
+        assertFalse("Should not hide proxy with no configuration",
+                gpc.handleProxificationForHook(sref, mockBundleContext()));
+        assertEquals("No proxy should have been created", 0, gpc.proxyMap.size());
+
+        long clientBundleID = 42L;
+        Bundle clientBundle = mockBundle(clientBundleID);
+        Dictionary<String, Object> props2 = new Hashtable<String, Object>();
+        props2.put(Constants.SERVICE_ID, 13L);
+        props2.put("a", "6");
+        props2.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, clientBundleID);
+        ServiceReference<?> sref2 = mockServiceReference(props2);
+        assertFalse("Should not hide an existing proxy for this client",
+                gpc.handleProxificationForHook(sref2, mockBundleContext(clientBundle)));
+        assertEquals("No proxy should have been created", 0, gpc.proxyMap.size());
+
+        Dictionary<String, Object> props3 = new Hashtable<String, Object>();
+        props3.put(Constants.SERVICE_ID, 14L);
+        props3.put("a", "6");
+        props3.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 876L);
+        ServiceReference<?> sref3 = mockServiceReference(props3);
+        assertTrue("Should hide proxies intended for different clients",
+                gpc.handleProxificationForHook(sref3, mockBundleContext(clientBundle)));
+        assertEquals("No proxy should have been created", 0, gpc.proxyMap.size());
+
+        Dictionary<String, Object> props4 = new Hashtable<String, Object>();
+        props4.put(Constants.SERVICE_ID, 15L);
+        props4.put("a", "7");
+        ServiceReference<?> sref4 = mockServiceReference(props4);
+        assertTrue("Should hide a service that needs to be proxied",
+                gpc.handleProxificationForHook(sref4, mockBundleContext()));
+        assertEquals("Should trigger proxy creation", 1, gpc.proxyMap.size());
+    }
+
     @SuppressWarnings({ "unchecked", "rawtypes" })
     @Test
     public void testHandleServiceUnregistering() throws Exception {

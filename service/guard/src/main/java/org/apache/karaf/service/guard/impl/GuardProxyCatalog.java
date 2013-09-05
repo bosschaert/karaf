@@ -70,7 +70,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     static final String PROXY_CREATOR_THREAD_NAME = "Secure OSGi Service Proxy Creator";
     static final String PROXY_FOR_BUNDLE_KEY = "." + GuardProxyCatalog.class.getName() + ".for-bundle";
-    static final String SERVICE_ACL_PREFIX = "org.apache.karaf.service.acl."; // TODO everywhere should use this
+    static final String SERVICE_ACL_PREFIX = "org.apache.karaf.service.acl.";
     static final String SERVICE_GUARD_KEY = "service.guard";
     static final Logger log = LoggerFactory.getLogger(GuardProxyCatalog.class);
 
@@ -237,6 +237,27 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         return new Long(clientBC.getBundle().getBundleId()).equals(sr.getProperty(PROXY_FOR_BUNDLE_KEY));
     }
 
+    // Called by hooks to find out whether the service should be hidden.
+    // Also handles the proxy creation of services if applicable.
+    // Return true if the hook should hide the service for the bundle
+    boolean handleProxificationForHook(ServiceReference<?> sr, BundleContext clientBC) {
+        if (isProxy(sr)) {
+            if (!isProxyFor(sr, clientBC)) {
+                // This proxy is for another bundle
+                return true;
+            }
+            return false;
+        }
+
+        if (!needsProxy(sr)) {
+            // There is no ACL configuration for this service, so no need to proxy it
+            return false;
+        }
+
+        proxyIfNotAlreadyProxied(sr, clientBC); // Note does most of the work async
+        return true;
+    }
+
     // Returns true if there is an ACL configuration for the service. Without that there is no point in proxying
     // Note that this method does not take the global system property filter into account
     boolean needsProxy(ServiceReference<?> sref) {
@@ -249,20 +270,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         }
 
         try {
-            ConfigurationAdmin ca = configAdminTracker.getService();
-
-            Configuration[] configs;
-            if (ca == null) {
-                configs = new Configuration[0];
-            } else {
-                configs = ca.listConfigurations("(&(" + Constants.SERVICE_PID  + "=" + SERVICE_ACL_PREFIX + "*)(" + SERVICE_GUARD_KEY + "=*))");
-                if (configs == null) {
-                    configs = new Configuration[0];
-                }
-            }
-
             boolean needsProxy = false;
-            for (Configuration c : configs) {
+            for (Configuration c : getServiceGuardConfigs()) {
                 Object guardFilter = c.getProperties().get(SERVICE_GUARD_KEY);
                 if (guardFilter instanceof String) {
                     Filter f = myBundleContext.createFilter((String) guardFilter);

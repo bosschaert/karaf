@@ -70,10 +70,6 @@ class GuardingFindHook implements FindHook, BundleListener {
         }
 
         if (filter != null) {
-//            asasasd TODO
-//            this keeps recursing....
-//            should only do this on a positive condition
-//            or if the condition is new...
             if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
                 // Someone is looking for a service based on roles. As the roles are added by the proxy we need
                 // to start looking for services without those roles and proxy them if needed.
@@ -90,25 +86,12 @@ class GuardingFindHook implements FindHook, BundleListener {
             ServiceReference<?> sr = i.next();
 
             if (!servicesFilter.match(sr)) {
-                continue; // TODO remove
-            }
-
-            if (guardProxyCatalog.isProxy(sr)) {
-                if (!guardProxyCatalog.isProxyFor(sr, context)) {
-                    i.remove();
-                }
                 continue;
             }
 
-            if (!guardProxyCatalog.needsProxy(sr)) {
-                continue;
-            }
-
-//            if (!guardProxyCatalog.isProxyFor(sr, context)) {
+            if (guardProxyCatalog.handleProxificationForHook(sr, context)) {
                 i.remove();
-                guardProxyCatalog.proxyIfNotAlreadyProxied(sr, context); // Note does most of the work async
-//            }
-
+            }
         }
     }
 
