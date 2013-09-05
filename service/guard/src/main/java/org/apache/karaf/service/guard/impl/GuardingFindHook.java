@@ -70,6 +70,10 @@ class GuardingFindHook implements FindHook, BundleListener {
         }
 
         if (filter != null) {
+//            asasasd
+//            this keeps recursing....
+//            should only do this on a positive condition
+//            or if the condition is new...
             if (filter.contains(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY)) {
                 // Someone is looking for a service based on roles. As the roles are added by the proxy we need
                 // to start looking for services without those roles and proxy them if needed.
@@ -86,13 +90,25 @@ class GuardingFindHook implements FindHook, BundleListener {
             ServiceReference<?> sr = i.next();
 
             if (!servicesFilter.match(sr)) {
+                continue; // TODO remove
+            }
+
+            if (guardProxyCatalog.isProxy(sr)) {
+                if (!guardProxyCatalog.isProxyFor(sr, context)) {
+                    i.remove();
+                }
                 continue;
             }
 
-            if (!guardProxyCatalog.isProxyFor(sr, context)) {
+            if (!guardProxyCatalog.needsProxy(sr)) {
+                continue;
+            }
+
+//            if (!guardProxyCatalog.isProxyFor(sr, context)) {
                 i.remove();
                 guardProxyCatalog.proxyIfNotAlreadyProxied(sr, context); // Note does most of the work async
-            }
+//            }
+
         }
     }
 
@@ -102,7 +118,9 @@ class GuardingFindHook implements FindHook, BundleListener {
     // This method kicks off a process that adds a ServiceTracker that gets notified if such a service ever arrives.
     private void addNonRoleServiceTracker(final BundleContext context, final String filter) {
         // Replace the condition on the roles with a condition on services that don't specify the role at all
-        String nonRoleFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("(!(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=*))");
+        String nonRoleFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("@");
+        nonRoleFilter = nonRoleFilter.replaceAll("\\(\\s*[@]\\s*\\)", "@");
+        nonRoleFilter = nonRoleFilter.replaceAll("[@]+", "(!(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=*))");
 
         // Find/create a new MST. This tracker will track the filter for a number of bundle contexts.
         boolean newTracker = false;
@@ -117,6 +135,7 @@ class GuardingFindHook implements FindHook, BundleListener {
                 } catch (InvalidSyntaxException e) {
                     GuardProxyCatalog.log.warn("Problem creating tracker for requested service without roles condition: {} ",
                             nonRoleFilter, e);
+                    return;
                 }
             }
         }

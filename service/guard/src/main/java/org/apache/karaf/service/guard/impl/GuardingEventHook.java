@@ -56,13 +56,33 @@ class GuardingEventHook implements EventListenerHook {
 
         for (Iterator<BundleContext> i = listeners.keySet().iterator(); i.hasNext(); ) {
             BundleContext bc = i.next();
+//            /* */
+//            List<Long> bcs = new ArrayList<Long>();
+//            for (ListenerInfo li : listeners.get(bc)) {
+//                bcs.add(li.getBundleContext().getBundle().getBundleId());
+//            }
+//            /* */ System.out.println(bc.getBundle().getBundleId() + "%" + bcs);
             if (myBundleContext.equals(bc) || bc.getBundle().getBundleId() == 0L) {
                 // don't hide anything from this bundle or the system bundle
                 continue;
             }
 
-            if (guardProxyCatalog.isProxyFor(sr, bc)) {
-                // This is a proxy for bc, so let the bundle see it.
+            if (guardProxyCatalog.isProxy(sr)) {
+                if (!guardProxyCatalog.isProxyFor(sr, bc)) {
+                    // This is a proxy for bc, so let the bundle see it.
+                    i.remove();
+                }
+                continue;
+            }
+
+//            if (guardProxyCatalog.isProxy(sr)) {
+//                // This proxy is intended for someone else
+//                i.remove();
+//                continue;
+//            }
+
+            if (!guardProxyCatalog.needsProxy(sr)) {
+                // There is no ACL for this service, so no need to proxy it
                 continue;
             }
 

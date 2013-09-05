@@ -97,6 +97,7 @@ public class CommandProxyCatalog implements ConfigurationListener {
             Object roleString = config.getProperties().get(key);
             map.put("execute" + arguments, roleString);
             map.put(key, roleString);
+            map.put("*", "*"); // Any other method may be invoked by anyone
         }
 
         // Update config admin with the generated configuration

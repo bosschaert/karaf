@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Dictionary;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -72,6 +73,9 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     static final String PROXY_FOR_BUNDLE_KEY = "." + GuardProxyCatalog.class.getName() + ".for-bundle";
     static final Logger log = LoggerFactory.getLogger(GuardProxyCatalog.class);
 
+    private static final String ROLE_WILDCARD = "*";
+    private static final String SERVICE_GUARD_KEY = "service.guard";
+    private static final String SERVICE_ACL_PREFIX = "org.apache.karaf.service.acl."; // TODO everywhere should use this
     private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
 
     private final BundleContext myBundleContext;
@@ -79,6 +83,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
     final ServiceTracker<ProxyManager, ProxyManager> proxyManagerTracker;
+    final Map<ServiceReference<?>, Boolean> needsProxyMap = new HashMap<ServiceReference<?>, Boolean>();
     final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
             new ConcurrentHashMap<ProxyMapKey, ServiceRegistrationHolder>();
     final BlockingQueue<CreateProxyRunnable> createProxyQueue = new LinkedBlockingQueue<CreateProxyRunnable>();
@@ -232,9 +237,51 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         return new Long(clientBC.getBundle().getBundleId()).equals(sr.getProperty(PROXY_FOR_BUNDLE_KEY));
     }
 
+    // Returns true if there is an ACL configuration for the service. Without that there is no point in proxying
+    boolean needsProxy(ServiceReference<?> sref) {
+        // TODO incorporate global filter
+        synchronized (needsProxyMap) {
+            // Do without sync?
+            Boolean val = needsProxyMap.get(sref);
+            if (val != null) {
+                return val;
+            }
+
+            ConfigurationAdmin ca = configAdminTracker.getService();
+            if (ca == null) {
+                // don't cache this situation as when config admin appears it may change
+                return false;
+            }
+
+            try {
+                Configuration[] configs = ca.listConfigurations("(&(" + Constants.SERVICE_PID  + "=" + SERVICE_ACL_PREFIX + "*)(" + SERVICE_GUARD_KEY + "=*))");
+                if (configs == null)
+                    configs = new Configuration[0];
+
+                boolean needsProxy = false;
+                for (Configuration c : configs) {
+                    Object guardFilter = c.getProperties().get(SERVICE_GUARD_KEY);
+                    if (guardFilter instanceof String) {
+                        Filter f = myBundleContext.createFilter((String) guardFilter);
+                        if (f.match(sref)) {
+                            needsProxy = true;
+                            break;
+                        }
+                    }
+                }
+                synchronized (needsProxyMap) {
+                    needsProxyMap.put(sref, needsProxy);
+                }
+                return needsProxy;
+            } catch (Exception e) {
+                log.error("Problem checking service security configuration", e);
+                return false; // TODO is this the right thing?
+            }
+        }
+    }
+
     void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC)  {
         if (isProxy(originalRef)) {
-            // It's already a proxy, don't re-proxy
             return;
         }
 
@@ -249,7 +296,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return;
         }
 
-        final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
+        /* TODO we have this already */ final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
         final long clientBundleID = clientBC.getBundle().getBundleId();
         log.trace("Will create proxy of service {}({}) for client {}({})",
                 originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID,
@@ -302,11 +349,13 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 nextClass:
                 for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
                     Class<?> cls = i.next();
-                    if (((cls.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) ||
+                    if (((cls.getModifiers() & (Modifier.PUBLIC | Modifier.PROTECTED)) == 0) ||
+                        ((cls.getModifiers() & Modifier.FINAL) > 0) ||
                         cls.isAnonymousClass()  || cls.isLocalClass()) {
                         // Do not attempt to proxy private, final or anonymous classes
                         i.remove();
                         objectClassProperty.remove(cls.getName());
+                        /* TODO do we need any of this?
                     } else {
                         for (Method m : cls.getDeclaredMethods()) {
                             if ((m.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
@@ -316,6 +365,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                                 continue nextClass;
                             }
                         }
+                    */
                     }
                 }
 
@@ -331,6 +381,13 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                         objectClassProperty.toArray(new String [] {}), proxyService, proxyPropertiesRoles());
 
                 Dictionary<String, Object> actualProxyProps = copyProperties(proxyReg.getReference());
+                /* */
+                // TODO
+//                Filter f = FrameworkUtil.createFilter("(&(osgi.command.scope=*)(osgi.command.function=*))");
+//                if (f.match(originalRef)) {
+//                    System.out.println("*** Created proxy with properties: " + actualProxyProps);
+//                }
+                /* */
                 log.info("Created proxy of service {} under {} with properties {}",
                         orgServiceID, actualProxyProps.get(Constants.OBJECTCLASS), actualProxyProps);
 
@@ -341,9 +398,10 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             private Dictionary<String, Object> proxyPropertiesRoles() throws Exception {
                 Dictionary<String, Object> p = proxyProperties(originalRef, clientBC.getBundle().getBundleId(), orgServiceID);
 
-                List<String> roles = getServiceInvocationRoles(originalRef);
+                Set<String> roles = getServiceInvocationRoles(originalRef);
 
                 if (roles != null) {
+                    roles.remove(ROLE_WILDCARD); // we don't expose that on the service property
                     p.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
                 } else {
                     // In this case there are no roles defined for the service so anyone can invoke it
@@ -388,14 +446,14 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     // Returns what roles can possibly ever invoke this service. Note that not every invocation may be successful
     // as there can be different roles for different methos and also roles based on arguments passed in.
-    private List<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
+    private Set<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
         boolean definitionFound = false;
-        List<String> allRoles = new ArrayList<String>();
+        Set<String> allRoles = new HashSet<String>();
 
         // This can probably be optimized. Maybe we can cache the config object relevant instead of
         // walking through all of the ones that have 'service.guard'.
         for (Configuration config : getServiceGuardConfigs()) {
-            Object guardFilter = config.getProperties().get("service.guard");
+            Object guardFilter = config.getProperties().get(SERVICE_GUARD_KEY);
             if (guardFilter instanceof String) {
                 Filter filter = myBundleContext.createFilter((String) guardFilter);
                 if (filter.match(serviceReference)) {
@@ -432,7 +490,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return new Configuration [] {};
         }
 
-        Configuration[] configs = ca.listConfigurations("(service.guard=*)");
+        Configuration[] configs = ca.listConfigurations(
+                "(&(" + Constants.SERVICE_PID  + "=" + SERVICE_ACL_PREFIX + "*)(" + SERVICE_GUARD_KEY + "=*))");
         if (configs == null) {
             return new Configuration [] {};
         }
@@ -524,7 +583,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             // This can probably be optimized. Maybe we can cache the config object relevant instead of
             // walking through all of the ones that have 'service.guard'.
             for (Configuration config : configs) {
-                Object guardFilter = config.getProperties().get("service.guard");
+                Object guardFilter = config.getProperties().get(SERVICE_GUARD_KEY);
                 if (guardFilter instanceof String) {
                     Filter filter = myBundleContext.createFilter((String) guardFilter);
                     if (filter.match(serviceReference)) {
@@ -578,6 +637,10 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     static boolean currentUserHasRole(String reqRole) {
+        if (ROLE_WILDCARD.equals(reqRole)) {
+            return true;
+        }
+
         String clazz;
         String role;
         int idx = reqRole.indexOf(':');

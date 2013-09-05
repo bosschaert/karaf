@@ -18,6 +18,7 @@ import org.apache.felix.service.command.Function;
 import org.apache.felix.service.threadio.ThreadIO;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.osgi.framework.BundleContext;
+import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceReference;
@@ -59,7 +60,7 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
             sb.append(rp.getName());
             sb.append(')');
         }
-        sb.append(""); // Or no roles specified at all
+        sb.append("(!(org.apache.karaf.service.guard.roles=*))"); // Or no roles specified at all
         sb.append(')');
         roleClause = sb.toString();
 
@@ -92,6 +93,8 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
     {
         Filter filter = context.createFilter(String.format("(&(%s=*)(%s=*)%s)",
             CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION, roleClause));
+        System.out.println("### ServiceTracker: (" + context.getBundle().getBundleId() + ")");
+        System.out.println("" + filter);
 //        Filter filter = context.createFilter(String.format("(&(!(%s=*))(%s=*))",
 //                CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION));
 
@@ -103,6 +106,13 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
                 Object scope = reference.getProperty(CommandProcessor.COMMAND_SCOPE);
                 Object function = reference.getProperty(CommandProcessor.COMMAND_FUNCTION);
                 List<Object> commands = new ArrayList<Object>();
+
+                /* */
+                if ("config".equals(scope)) {
+                    System.out.println("Added command: " + scope + ":" + function + "(" + reference.getProperty(Constants.SERVICE_ID)+
+                            "-" + reference.getProperty(".org.apache.karaf.service.guard.impl.GuardProxyCatalog.for-bundle") + ")");
+                }
+                /* */
 
                 if (scope != null && function != null)
                 {

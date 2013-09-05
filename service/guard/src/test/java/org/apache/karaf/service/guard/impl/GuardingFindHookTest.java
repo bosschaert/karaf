@@ -188,35 +188,49 @@ public class GuardingFindHookTest {
 
     @Test
     public void testRoleBasedFind1() throws Exception {
-        Filter nonRoleFilter = getNonRoleFilter("(&(test=val*)(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole))");
+        Filter nrf = nonRoleFilter("(&(test=val*)(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole))");
 
         // Check that the filter created to find service that don't have the roles matches the right services
-        assertTrue(nonRoleFilter.match(dict("test=value")));
-        assertTrue(nonRoleFilter.match(dict("test=value2", "foo=bar")));
-        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole")));
-        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole")));
-        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole",
+        assertTrue(nrf.match(dict("test=value")));
+        assertTrue(nrf.match(dict("test=value2", "foo=bar")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole",
                 GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=testrole")));
     }
 
     @Test
     public void testRoleBasedFind2() throws Exception {
-        Filter nonRoleFilter = getNonRoleFilter("(&(|(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole)"
+        Filter nrf = nonRoleFilter("(&(|(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole)"
                 + "(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole))(|(test.test=val*)(x>=6)))");
 
         // Check that the filter created to find service that don't have the roles matches the right services
-        assertTrue(nonRoleFilter.match(dict("test.test=value")));
-        assertTrue(nonRoleFilter.match(dict("x=7")));
-        assertTrue(nonRoleFilter.match(dict("test.test=value", "x=999")));
-        assertTrue(nonRoleFilter.match(dict("test.test=value", "x=5")));
-        assertTrue(nonRoleFilter.match(dict("test=value", "x=999")));
-        assertFalse(nonRoleFilter.match(dict("test=value", "x=5")));
-        assertFalse(nonRoleFilter.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole")));
-        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
-        assertFalse(nonRoleFilter.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole",
+        assertTrue(nrf.match(dict("test.test=value")));
+        assertTrue(nrf.match(dict("x=7")));
+        assertTrue(nrf.match(dict("test.test=value", "x=999")));
+        assertTrue(nrf.match(dict("test.test=value", "x=5")));
+        assertTrue(nrf.match(dict("test=value", "x=999")));
+        assertFalse(nrf.match(dict("test=value", "x=5")));
+        assertFalse(nrf.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole",
                 GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
     }
 
+    @Test
+    public void testRoleBasedFind3() throws Exception {
+        Filter nrf = nonRoleFilter("(&(a=b)(|(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=x)"
+                + "(!(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=*))))");
+
+        assertTrue(nrf.match(dict("a=b")));
+    }
+
+    @Test
+    public void testRoleBasedFind4() throws Exception {
+        Filter nrf = nonRoleFilter("(&(a=b)(! (" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=* )))");
+
+        assertTrue(nrf.match(dict("a=b")));
+    }
     @Test
     public void testRoleBasedFindNotNeeded() throws Exception {
         List<Filter> filtersCreated = new ArrayList<Filter>();
@@ -349,7 +363,7 @@ public class GuardingFindHookTest {
         assertEquals("Should not track the hook bundle itself", Collections.singletonList(clientBC), mst.clientBCs);
     }
 
-    private Filter getNonRoleFilter(String roleFilter) throws Exception, InvalidSyntaxException {
+    private Filter nonRoleFilter(String roleFilter) throws Exception, InvalidSyntaxException {
         List<Filter> filtersCreated = new ArrayList<Filter>();
         BundleContext hookBC = mockBundleContext(5L, filtersCreated);
         GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);

@@ -389,8 +389,26 @@ public class GuardProxyCatalogTest {
             }
         }, serviceMap);
         assertEquals(1, serviceMap.size());
-        assertEquals(Arrays.asList("X"), serviceMap.keySet().iterator().next().
+        assertEquals(Collections.singleton("X"), serviceMap.keySet().iterator().next().
                 getProperty(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testAssignRoles4() throws Exception {
+        Dictionary<String, Object> config = new Hashtable<String, Object>();
+        config.put(Constants.SERVICE_PID, "foobar");
+        config.put("service.guard", "(objectClass=" + TestServiceAPI.class.getName() + ")");
+        config.put("somemethod", "b");
+        config.put("someOtherMethod", "b");
+        config.put("somethingelse", "*");
+
+        BundleContext bc = mockConfigAdminBundleContext(config);
+
+        Dictionary<String, Object> proxyProps = testCreateProxy(bc, TestServiceAPI.class, new TestService());
+        Collection<String> result = (Collection<String>) proxyProps.get(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY);
+        assertEquals(1, result.size());
+        assertEquals("b", result.iterator().next());
     }
 
     @SuppressWarnings("unchecked")
@@ -616,6 +634,59 @@ public class GuardProxyCatalogTest {
                 } catch (SecurityException se) {
                     // good
                 }
+                return null;
+            }
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testInvocationBlocking7() throws Exception {
+        Dictionary<String, Object> c1 = new Hashtable<String, Object>();
+        c1.put(Constants.SERVICE_PID, "foobar");
+        c1.put("service.guard", "(objectClass=" + TestServiceAPI3.class.getName() + ")");
+        c1.put("foo()", "a");
+        c1.put("bar", "b");
+        c1.put("*", "*");
+
+        BundleContext bc = mockConfigAdminBundleContext(c1);
+
+        final Object proxy = testCreateProxy(bc, new Class [] {TestServiceAPI3.class}, new TestService3());
+
+        Subject s1 = new Subject();
+        Subject.doAs(s1, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                TestServiceAPI3 obj = (TestServiceAPI3) proxy;
+                assertEquals("Should have allowed this invocation for any (or no) role", -7, obj.foo(7));
+                try {
+                    obj.foo();
+                    fail("Should have been blocked");
+                } catch (SecurityException se) {
+                    // good
+                }
+                try {
+                    obj.bar();
+                    fail("Should have been blocked");
+                } catch (SecurityException se) {
+                    // good
+                }
+
+                return null;
+            }
+        });
+
+        Subject s2 = new Subject();
+        s2.getPrincipals().add(new RolePrincipal("a"));
+        s2.getPrincipals().add(new RolePrincipal("b"));
+        s2.getPrincipals().add(new RolePrincipal("d"));
+        Subject.doAs(s2, new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                TestServiceAPI3 obj = (TestServiceAPI3) proxy;
+                assertEquals(42, obj.foo());
+                assertEquals(99, obj.bar());
+                assertEquals(-32767, obj.foo(32767));
                 return null;
             }
         });
@@ -955,7 +1026,7 @@ public class GuardProxyCatalogTest {
 
         for (String key : serviceProps.keySet()) {
             if (GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY.equals(key)) {
-                assertEquals(Arrays.asList("role.1", "role.2"), reg.getReference().getProperty(key));
+                assertEquals(new HashSet(Arrays.asList("role.1", "role.2")), reg.getReference().getProperty(key));
             } else {
                 assertEquals(serviceProps.get(key), reg.getReference().getProperty(key));
             }
@@ -972,7 +1043,7 @@ public class GuardProxyCatalogTest {
 
         for (String key : serviceProps.keySet()) {
             if (GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY.equals(key)) {
-                assertEquals(Arrays.asList("role.1", "role.2"), reg.getReference().getProperty(key));
+                assertEquals(new HashSet(Arrays.asList("role.1", "role.2")), reg.getReference().getProperty(key));
             } else {
                 assertEquals(serviceProps.get(key), reg.getReference().getProperty(key));
             }
@@ -1354,7 +1425,7 @@ public class GuardProxyCatalogTest {
         }
 
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
-        EasyMock.expect(ca.listConfigurations("(service.guard=*)")).andReturn(configurations).anyTimes();
+        EasyMock.expect(ca.listConfigurations("(&(service.pid=org.apache.karaf.service.acl.*)(service.guard=*))")).andReturn(configurations).anyTimes();
         EasyMock.replay(ca);
 
         final ServiceReference caSR = EasyMock.createMock(ServiceReference.class);
@@ -1457,6 +1528,26 @@ public class GuardProxyCatalogTest {
 
     public interface TestServiceAPI2 {
         String doit(String s);
+    }
+
+    public interface TestServiceAPI3 {
+        int foo();
+        int foo(int f);
+        int bar();
+    }
+
+    class TestService3 implements TestServiceAPI3 {
+        public int foo() {
+            return 42;
+        }
+
+        public int foo(int f) {
+            return -f;
+        }
+
+        public int bar() {
+            return 99;
+        }
     }
 
     public class TestObjectWithoutInterface {
