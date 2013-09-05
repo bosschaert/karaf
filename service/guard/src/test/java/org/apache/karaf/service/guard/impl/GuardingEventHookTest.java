@@ -19,6 +19,7 @@ package org.apache.karaf.service.guard.impl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Dictionary;
@@ -35,16 +36,23 @@ import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
+import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceEvent;
+import org.osgi.framework.ServiceListener;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.hooks.service.ListenerHook.ListenerInfo;
+import org.osgi.service.cm.Configuration;
+import org.osgi.service.cm.ConfigurationAdmin;
 
 public class GuardingEventHookTest {
+    @SuppressWarnings("unchecked")
     @Test
     public void testEventHookEvents() throws Exception {
         BundleContext frameworkBC = mockBundleContext(0L);
 
-        BundleContext hookBC = mockBundleContext(5L);
+        Dictionary<String, Object> config = new Hashtable<String, Object>();
+        config.put("service.guard", "(service.id=*)");
+        BundleContext hookBC = mockConfigAdminBundleContext(config);
         GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
 
         Filter serviceFilter = FrameworkUtil.createFilter("(foo=bar)");
@@ -116,9 +124,12 @@ public class GuardingEventHookTest {
         assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref3, client1BC)));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     public void testEventHookProxyEvents() throws Exception {
-        BundleContext hookBC = mockBundleContext(5L);
+        Dictionary<String, Object> config = new Hashtable<String, Object>();
+        config.put("service.guard", "(service.id=*)");
+        BundleContext hookBC = mockConfigAdminBundleContext(config);
         GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
 
         Filter serviceFilter = FrameworkUtil.createFilter("(service.id=*)"); // any service will match
@@ -174,6 +185,49 @@ public class GuardingEventHookTest {
         EasyMock.expect(bundle.getBundleContext()).andReturn(bc).anyTimes();
         EasyMock.replay(bundle);
 
+        return bc;
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private BundleContext mockConfigAdminBundleContext(Dictionary<String, Object> ... configs) throws IOException,
+        InvalidSyntaxException {
+        Configuration [] configurations = new Configuration[configs.length];
+
+        for (int i = 0; i < configs.length; i++) {
+            Configuration conf = EasyMock.createMock(Configuration.class);
+            EasyMock.expect(conf.getProperties()).andReturn(configs[i]).anyTimes();
+            EasyMock.expect(conf.getPid()).andReturn((String) configs[i].get(Constants.SERVICE_PID)).anyTimes();
+            EasyMock.replay(conf);
+            configurations[i] = conf;
+        }
+
+        ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
+        EasyMock.expect(ca.listConfigurations("(&(service.pid=org.apache.karaf.service.acl.*)(service.guard=*))")).andReturn(configurations).anyTimes();
+        EasyMock.replay(ca);
+
+        final ServiceReference caSR = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(caSR);
+
+        Bundle b = EasyMock.createMock(Bundle.class);
+        EasyMock.expect(b.getBundleId()).andReturn(877342449L).anyTimes();
+        EasyMock.replay(b);
+
+        BundleContext bc = EasyMock.createNiceMock(BundleContext.class);
+        EasyMock.expect(bc.getBundle()).andReturn(b).anyTimes();
+        EasyMock.expect(bc.createFilter(EasyMock.isA(String.class))).andAnswer(new IAnswer<Filter>() {
+            @Override
+            public Filter answer() throws Throwable {
+                return FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
+            }
+        }).anyTimes();
+        String cmFilter = "(&(objectClass=" + ConfigurationAdmin.class.getName() + ")"
+                + "(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*)))";
+        bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(cmFilter));
+        EasyMock.expectLastCall().anyTimes();
+        EasyMock.expect(bc.getServiceReferences(EasyMock.anyObject(String.class), EasyMock.eq(cmFilter))).
+        andReturn(new ServiceReference<?> [] {caSR}).anyTimes();
+        EasyMock.expect(bc.getService(caSR)).andReturn(ca).anyTimes();
+        EasyMock.replay(bc);
         return bc;
     }
 
