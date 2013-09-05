@@ -42,8 +42,10 @@ class GuardingFindHook implements FindHook, BundleListener {
     // or
     //   !(org.apache.karaf.service.guard.roles=myotherrole)
     // It is then later used to turn this condition off, so that services that match the base conditions are found.
-    private static final Pattern GUARD_ROLES_CONDITION =
+    private static final Pattern GUARD_ROLES_CONDITION_PATTERN =
             Pattern.compile("[!]?\\s*\\(\\s*" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "\\s*[=]\\s*[a-zA-Z0-9*]+\\s*\\)");
+    private static final Pattern EMTPY_BRACES_PATTRN = Pattern.compile("\\(\\s*[@]\\s*\\)");
+    private static final Pattern AT_SIGNS_PATTERN = Pattern.compile("[@]+");
 
     private final BundleContext myBundleContext;
     private final GuardProxyCatalog guardProxyCatalog;
@@ -100,10 +102,11 @@ class GuardingFindHook implements FindHook, BundleListener {
     // to ensure that the proxyfied service is registered when it does.
     // This method kicks off a process that adds a ServiceTracker that gets notified if such a service ever arrives.
     private void addNonRoleServiceTracker(final BundleContext context, final String filter) {
-        // Replace the condition on the roles with a condition on services that don't specify the role at all
-        String nonRoleFilter = GUARD_ROLES_CONDITION.matcher(filter).replaceAll("@");
-        nonRoleFilter = nonRoleFilter.replaceAll("\\(\\s*[@]\\s*\\)", "@"); // TODO clean up
-        nonRoleFilter = nonRoleFilter.replaceAll("[@]+", "(!(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=*))");
+        // Replace the condition on the roles with a condition on services that are not proxied
+        String nonRoleFilter = GUARD_ROLES_CONDITION_PATTERN.matcher(filter).replaceAll("@");
+        nonRoleFilter = EMTPY_BRACES_PATTRN.matcher(nonRoleFilter).replaceAll("@");
+        nonRoleFilter = AT_SIGNS_PATTERN.matcher(nonRoleFilter).
+                replaceAll("(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*))");
 
         // Find/create a new MST. This tracker will track the filter for a number of bundle contexts.
         boolean newTracker = false;
@@ -112,7 +115,6 @@ class GuardingFindHook implements FindHook, BundleListener {
             mst = trackers.get(nonRoleFilter);
             if (mst == null) {
                 try {
-                    /* */ System.out.println("@@@ New ServiceTracker: " + nonRoleFilter);
                     mst = new MultiplexingServiceTracker(myBundleContext, context, nonRoleFilter);
                     trackers.put(nonRoleFilter, mst);
                     newTracker = true;
@@ -186,8 +188,6 @@ class GuardingFindHook implements FindHook, BundleListener {
             // to that all the interested clients can see it...
             if (servicesFilter.match(reference)) {
                 for (BundleContext bc : clientBCs) {
-                    // /* */ System.out.println("New matching service: " + reference.getProperty(Constants.SERVICE_ID));
-                    // guardProxyCatalog.proxyIfNotAlreadyProxied(reference, bc);
                     guardProxyCatalog.handleProxificationForHook(reference, bc);
                 }
             }

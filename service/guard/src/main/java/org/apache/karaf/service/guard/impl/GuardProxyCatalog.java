@@ -241,6 +241,11 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     // Also handles the proxy creation of services if applicable.
     // Return true if the hook should hide the service for the bundle
     boolean handleProxificationForHook(ServiceReference<?> sr, BundleContext clientBC) {
+        // Note that when running under an OSGi R6 framework the number of proxies created
+        // can be limited by looking at the new 'service.scope' property. If the value is
+        // 'singleton' then the same proxy can be shared across all clients.
+        // Pre OSGi R6 it is not possible to find out whether a service is backed by a
+        // Service Factory, so we assume that every service is.
         if (isProxy(sr)) {
             if (!isProxyFor(sr, clientBC)) {
                 // This proxy is for another bundle
@@ -254,10 +259,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC)  {
-        if (isProxy(originalRef)) { // TODO this can go since it's only invoked from handleProxificationForHook
-            return;
-        }
-
         final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
         final long clientBundleID = clientBC.getBundle().getBundleId();
 
@@ -272,7 +273,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return;
         }
 
-        // /* */ System.out.println("+++Create proxy of service " + orgServiceID + " for client " + clientBundleID);
         log.trace("Will create proxy of service {}({}) for client {}({})",
                 originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID,
                 clientBC.getBundle().getSymbolicName(), clientBundleID);
@@ -295,11 +295,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
             @Override
             public void run(ProxyManager pm) throws Exception {
-//                /* */
-//                if (clientBundleID == 40) {
-//                    System.out.println("Created proxy for bundle 40");
-//                }
-//                /* */
                 List<String> objectClassProperty =
                         new ArrayList<String>(Arrays.asList((String[]) originalRef.getProperty(Constants.OBJECTCLASS)));
 
@@ -357,12 +352,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                         objectClassProperty.toArray(new String [] {}), proxyService, proxyPropertiesRoles());
 
                 Dictionary<String, Object> actualProxyProps = copyProperties(proxyReg.getReference());
-//                /* */
-//                if (clientBundleID == 40) {
-//                    System.out.println("Created proxy with properties: " + actualProxyProps);
-//                }
-//                /* */
-
                 log.info("Created proxy of service {} under {} with properties {}",
                         orgServiceID, actualProxyProps.get(Constants.OBJECTCLASS), actualProxyProps);
 
@@ -664,7 +653,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                         CreateProxyRunnable proxyCreator = null;
                         try {
                             proxyCreator = createProxyQueue.take();
-                        } catch (InterruptedException e1) {
+                        } catch (InterruptedException ie) {
                             // part of normal behaviour
                         }
 
