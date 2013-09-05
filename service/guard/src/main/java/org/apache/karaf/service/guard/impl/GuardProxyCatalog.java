@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Dictionary;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -71,11 +70,11 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     static final String PROXY_CREATOR_THREAD_NAME = "Secure OSGi Service Proxy Creator";
     static final String PROXY_FOR_BUNDLE_KEY = "." + GuardProxyCatalog.class.getName() + ".for-bundle";
+    static final String SERVICE_ACL_PREFIX = "org.apache.karaf.service.acl."; // TODO everywhere should use this
+    static final String SERVICE_GUARD_KEY = "service.guard";
     static final Logger log = LoggerFactory.getLogger(GuardProxyCatalog.class);
 
     private static final String ROLE_WILDCARD = "*";
-    private static final String SERVICE_GUARD_KEY = "service.guard";
-    private static final String SERVICE_ACL_PREFIX = "org.apache.karaf.service.acl."; // TODO everywhere should use this
     private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
 
     private final BundleContext myBundleContext;
@@ -83,7 +82,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
     final ServiceTracker<ConfigurationAdmin, ConfigurationAdmin> configAdminTracker;
     final ServiceTracker<ProxyManager, ProxyManager> proxyManagerTracker;
-    final Map<ServiceReference<?>, Boolean> needsProxyMap = new HashMap<ServiceReference<?>, Boolean>();
+    final ConcurrentMap<ServiceReference<?>, Boolean> needsProxyCache =
+            new ConcurrentHashMap<ServiceReference<?>, Boolean>();
     final ConcurrentMap<ProxyMapKey, ServiceRegistrationHolder> proxyMap =
             new ConcurrentHashMap<ProxyMapKey, ServiceRegistrationHolder>();
     final BlockingQueue<CreateProxyRunnable> createProxyQueue = new LinkedBlockingQueue<CreateProxyRunnable>();
@@ -238,45 +238,48 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     // Returns true if there is an ACL configuration for the service. Without that there is no point in proxying
+    // Note that this method does not take the global system property filter into account
     boolean needsProxy(ServiceReference<?> sref) {
-        // TODO incorporate global filter
-        synchronized (needsProxyMap) {
-            // Do without sync?
-            Boolean val = needsProxyMap.get(sref);
-            if (val != null) {
-                return val;
-            }
+        // When this method is called the configuration really needs to be available, if it is going to be there
+        // proxying services after a client already obtained the original one doesn't work
 
+        Boolean val = needsProxyCache.get(sref);
+        if (val != null) {
+            return val;
+        }
+
+        try {
             ConfigurationAdmin ca = configAdminTracker.getService();
+
+            Configuration[] configs;
             if (ca == null) {
-                // don't cache this situation as when config admin appears it may change
-                return false;
+                configs = new Configuration[0];
+            } else {
+                configs = ca.listConfigurations("(&(" + Constants.SERVICE_PID  + "=" + SERVICE_ACL_PREFIX + "*)(" + SERVICE_GUARD_KEY + "=*))");
+                if (configs == null) {
+                    configs = new Configuration[0];
+                }
             }
 
-            try {
-                Configuration[] configs = ca.listConfigurations("(&(" + Constants.SERVICE_PID  + "=" + SERVICE_ACL_PREFIX + "*)(" + SERVICE_GUARD_KEY + "=*))");
-                if (configs == null)
-                    configs = new Configuration[0];
-
-                boolean needsProxy = false;
-                for (Configuration c : configs) {
-                    Object guardFilter = c.getProperties().get(SERVICE_GUARD_KEY);
-                    if (guardFilter instanceof String) {
-                        Filter f = myBundleContext.createFilter((String) guardFilter);
-                        if (f.match(sref)) {
-                            needsProxy = true;
-                            break;
-                        }
+            boolean needsProxy = false;
+            for (Configuration c : configs) {
+                Object guardFilter = c.getProperties().get(SERVICE_GUARD_KEY);
+                if (guardFilter instanceof String) {
+                    Filter f = myBundleContext.createFilter((String) guardFilter);
+                    if (f.match(sref)) {
+                        needsProxy = true;
+                        break;
                     }
                 }
-                synchronized (needsProxyMap) {
-                    needsProxyMap.put(sref, needsProxy);
-                }
-                return needsProxy;
-            } catch (Exception e) {
-                log.error("Problem checking service security configuration", e);
-                return false; // TODO is this the right thing?
             }
+
+            // There is a possibility that two threads will race to do this work, in that case we just let
+            // the first one win.
+            needsProxyCache.putIfAbsent(sref, needsProxy);
+            return needsProxy;
+        } catch (Exception e) {
+            log.error("Problem checking service ACL configuration", e);
+            return false;
         }
     }
 

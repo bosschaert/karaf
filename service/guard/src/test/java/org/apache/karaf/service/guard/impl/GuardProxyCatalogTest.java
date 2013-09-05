@@ -69,7 +69,7 @@ import org.osgi.service.cm.ConfigurationAdmin;
 
 public class GuardProxyCatalogTest {
     // Some assertions fail when run under a code coverage tool, they are skipped when this is set to true
-    private static final boolean runningUnderCoverage = true; // set to false before committing any changes
+    private static final boolean runningUnderCoverage = false; // set to false before committing any changes
 
     @Test
     public void testGuardProxyCatalog() throws Exception {
@@ -145,6 +145,73 @@ public class GuardProxyCatalogTest {
         props2.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 43L);
         assertFalse(gpc.isProxyFor(mockServiceReference(props2), testBC));
         assertFalse(gpc.isProxyFor(mockServiceReference(new Hashtable<String, Object>()), testBC));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testNeedsProxy() throws Exception {
+        Dictionary<String, Object> config = new Hashtable<String, Object>();
+        config.put(Constants.SERVICE_PID, GuardProxyCatalog.SERVICE_ACL_PREFIX + "foo");
+        config.put(GuardProxyCatalog.SERVICE_GUARD_KEY, "(a>=5)");
+        BundleContext bc = mockConfigAdminBundleContext(config);
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        props.put("c", "d");
+        ServiceReference<?> sref = mockServiceReference(props);
+        assertEquals("Precondition", 0, gpc.needsProxyCache.size());
+        assertFalse(gpc.needsProxy(sref));
+        assertEquals(1, gpc.needsProxyCache.size());
+        assertEquals(Boolean.FALSE, gpc.needsProxyCache.get(sref));
+
+        Dictionary<String, Object> props2 = new Hashtable<String, Object>();
+        props2.put("a", 10);
+        ServiceReference<?> sref2 = mockServiceReference(props2);
+        assertTrue(gpc.needsProxy(sref2));
+        assertEquals(2, gpc.needsProxyCache.size());
+        assertTrue(gpc.needsProxyCache.get(sref2));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testNeedsProxyNoConfiguration() throws Exception {
+        BundleContext bc = mockConfigAdminBundleContext();
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        props.put("a", 10);
+        ServiceReference<?> sref = mockServiceReference(props);
+        assertEquals("Precondition", 0, gpc.needsProxyCache.size());
+        assertFalse(gpc.needsProxy(sref));
+        assertEquals(1, gpc.needsProxyCache.size());
+        assertEquals(Boolean.FALSE, gpc.needsProxyCache.get(sref));
+    }
+
+    @Test
+    public void testNeedsProxyNoConfigadmin() throws Exception {
+        BundleContext bc = mockBundleContext();
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        props.put("a", 10);
+        ServiceReference<?> sref = mockServiceReference(props);
+        assertEquals("Precondition", 0, gpc.needsProxyCache.size());
+        assertFalse(gpc.needsProxy(sref));
+        assertEquals(1, gpc.needsProxyCache.size());
+        assertEquals(Boolean.FALSE, gpc.needsProxyCache.get(sref));
+    }
+
+    @Test
+    public void testNeedsProxyCaching() throws Exception {
+        BundleContext bc = mockBundleContext();
+        GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
+
+        Dictionary<String, Object> props = new Hashtable<String, Object>();
+        props.put("a", "b");
+        ServiceReference<?> sref = mockServiceReference(props);
+        gpc.needsProxyCache.put(sref, Boolean.TRUE);
+
+        assertTrue(gpc.needsProxy(sref));
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
@@ -237,7 +304,8 @@ public class GuardProxyCatalogTest {
         props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
         ServiceReference<?> anotherRef = mockServiceReference(props2);
 
-        GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
+        BundleContext hookBC = mockBundleContext();
+        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
 
         ServiceRegistration<?> proxyReg = EasyMock.createMock(ServiceRegistration.class);
         EasyMock.expect(proxyReg.getReference()).andReturn((ServiceReference)
@@ -269,6 +337,14 @@ public class GuardProxyCatalogTest {
         gpc.bundleChanged(new BundleEvent(BundleEvent.STARTED, clientBundle));
         assertEquals("Non-STOPPED events should be ignored", 3, gpc.proxyMap.size());
         assertEquals("Non-STOPPED events should be ignored", 2, gpc.createProxyQueue.size());
+
+        gpc.bundleChanged(new BundleEvent(BundleEvent.STOPPED, hookBC.getBundle()));
+        assertEquals("Events for the hook bundle should be ignored here", 3, gpc.proxyMap.size());
+        assertEquals("Events for the hook bundle should be ignored here", 2, gpc.createProxyQueue.size());
+
+        gpc.bundleChanged(new BundleEvent(BundleEvent.STOPPED, mockBundle(0)));
+        assertEquals("Events for the system bundle should be ignored", 3, gpc.proxyMap.size());
+        assertEquals("Events for the system bundle should be ignored", 2, gpc.createProxyQueue.size());
 
         gpc.bundleChanged(new BundleEvent(BundleEvent.STOPPED, clientBundle));
         assertEquals(1, gpc.proxyMap.size());
@@ -1381,7 +1457,7 @@ public class GuardProxyCatalogTest {
     private BundleContext mockBundleContext(Bundle b) throws InvalidSyntaxException {
         if (b == null) {
             b = EasyMock.createNiceMock(Bundle.class);
-            EasyMock.expect(b.getBundleId()).andReturn(89334L);
+            EasyMock.expect(b.getBundleId()).andReturn(89334L).anyTimes();
             EasyMock.replay(b);
         }
 
@@ -1422,6 +1498,9 @@ public class GuardProxyCatalogTest {
             EasyMock.expect(conf.getPid()).andReturn((String) configs[i].get(Constants.SERVICE_PID)).anyTimes();
             EasyMock.replay(conf);
             configurations[i] = conf;
+        }
+        if (configurations.length == 0) {
+            configurations = null;
         }
 
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
