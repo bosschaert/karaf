@@ -94,9 +94,8 @@ public class ACLConfigurationParser {
 
     private static Specificity getRolesBasedOnSignature(String methodName, Object[] params, String[] signature,
             Dictionary<String, Object> properties, List<String> roles) {
-
-        boolean foundExactOrRegExp = false;
         if (params != null) {
+            boolean foundExactOrRegExp = false;
             Object exactArgMatchRoles = properties.get(getExactArgSignature(methodName, signature, params));
             if (exactArgMatchRoles instanceof String) {
                 roles.addAll(parseRoles((String) exactArgMatchRoles));
@@ -119,7 +118,6 @@ public class ACLConfigurationParser {
             // what roles in principle can invoke this method.
             List<String> r = getExactArgOrRegExpRoles(properties, methodName, signature);
             if (r != null) {
-                foundExactOrRegExp = true;
                 roles.addAll(r);
             }
         }
@@ -130,11 +128,6 @@ public class ACLConfigurationParser {
             return signature == null ? Specificity.NAME_MATCH : Specificity.SIGNATURE_MATCH;
         }
 
-        if (foundExactOrRegExp) {
-            // TODO can we get rid of this?
-            // We can get here if params == null and there were exact and/or regexp rules but no signature rules
-            return Specificity.ARGUMENT_MATCH;
-        }
         return Specificity.NO_MATCH;
     }
 
