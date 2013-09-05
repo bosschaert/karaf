@@ -288,10 +288,13 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return;
         }
 
+        final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
+        final long clientBundleID = clientBC.getBundle().getBundleId();
+
         // make sure it's on the map before the proxy is registered, as that can trigger
         // another call into this method, and we need to make sure that it doesn't proxy
         // the service again.
-        ProxyMapKey key = new ProxyMapKey(originalRef, clientBC);
+        ProxyMapKey key = new ProxyMapKey(orgServiceID, clientBundleID);
         final ServiceRegistrationHolder registrationHolder = new ServiceRegistrationHolder();
         ServiceRegistrationHolder previousHolder = proxyMap.putIfAbsent(key, registrationHolder);
         if (previousHolder != null) {
@@ -299,8 +302,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return;
         }
 
-        /* TODO we have this already */ final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
-        final long clientBundleID = clientBC.getBundle().getBundleId();
         log.trace("Will create proxy of service {}({}) for client {}({})",
                 originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID,
                 clientBC.getBundle().getSymbolicName(), clientBundleID);
@@ -349,26 +350,14 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
 
                 allClasses.add(svc.getClass());
 
-                nextClass:
                 for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
                     Class<?> cls = i.next();
                     if (((cls.getModifiers() & (Modifier.PUBLIC | Modifier.PROTECTED)) == 0) ||
                         ((cls.getModifiers() & Modifier.FINAL) > 0) ||
                         cls.isAnonymousClass()  || cls.isLocalClass()) {
-                        // Do not attempt to proxy private, final or anonymous classes
+                        // Do not attempt to proxy private, package-default, final,  anonymous or local classes
                         i.remove();
                         objectClassProperty.remove(cls.getName());
-                        /* TODO do we need any of this?
-                    } else {
-                        for (Method m : cls.getDeclaredMethods()) {
-                            if ((m.getModifiers() & (Modifier.FINAL | Modifier.PRIVATE)) > 0) {
-                                // Do not attempt to proxy classes that contain final or private methods
-                                i.remove();
-                                objectClassProperty.remove(cls.getName());
-                                continue nextClass;
-                            }
-                        }
-                    */
                     }
                 }
 
@@ -384,13 +373,6 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                         objectClassProperty.toArray(new String [] {}), proxyService, proxyPropertiesRoles());
 
                 Dictionary<String, Object> actualProxyProps = copyProperties(proxyReg.getReference());
-                /* */
-                // TODO
-//                Filter f = FrameworkUtil.createFilter("(&(osgi.command.scope=*)(osgi.command.function=*))");
-//                if (f.match(originalRef)) {
-//                    System.out.println("*** Created proxy with properties: " + actualProxyProps);
-//                }
-                /* */
                 log.info("Created proxy of service {} under {} with properties {}",
                         orgServiceID, actualProxyProps.get(Constants.OBJECTCLASS), actualProxyProps);
 
@@ -524,9 +506,9 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         final long originalServiceID;
         final long clientBundleID;
 
-        ProxyMapKey(ServiceReference<?> originalSR, BundleContext clientBC) {
-            originalServiceID = (Long) originalSR.getProperty(Constants.SERVICE_ID);
-            clientBundleID = clientBC.getBundle().getBundleId();
+        ProxyMapKey(long originalServiceID, long clientBundleID) {
+            this.originalServiceID = originalServiceID;
+            this.clientBundleID = clientBundleID;
         }
 
         @Override

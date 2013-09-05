@@ -61,7 +61,9 @@ public class GuardingEventHookTest {
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put(Constants.SERVICE_ID, 13L);
         ServiceReference<?> sref = mockServiceReference(props);
-        BundleContext client1BC = mockBundleContext(123L);
+
+        long client1ID = 123L;
+        BundleContext client1BC = mockBundleContext(client1ID);
         Map<BundleContext, Collection<ListenerInfo>> listeners = new HashMap<BundleContext, Collection<ListenerInfo>>();
         listeners.put(client1BC, Collections.<ListenerInfo>emptyList());
 
@@ -71,8 +73,9 @@ public class GuardingEventHookTest {
         assertEquals("No proxy should have been created because the service doesn't match the filter", 0, gpc.proxyMap.size());
         assertEquals("Nothing should have been removed from the listeners", 1, listeners.size());
 
+        long service2ID = 887L;
         Dictionary<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(Constants.SERVICE_ID, 887L);
+        props2.put(Constants.SERVICE_ID, service2ID);
         props2.put("a", "b");
         props2.put("foo", "bar");
         ServiceReference<?> sref2 = mockServiceReference(props2);
@@ -98,17 +101,20 @@ public class GuardingEventHookTest {
         // Update the service, now an additional client is interested
         props2.put("a", "c"); // Will change the properties of sref
         Map<BundleContext, Collection<ListenerInfo>> listeners4 = new HashMap<BundleContext, Collection<ListenerInfo>>();
-        BundleContext client2BC = mockBundleContext(11);
+
+        int client2ID = 11;
+        BundleContext client2BC = mockBundleContext(client2ID);
         listeners4.put(client2BC, Collections.<ListenerInfo>emptyList());
         listeners4.put(client1BC, Collections.<ListenerInfo>emptyList());
         geh.event(new ServiceEvent(ServiceEvent.MODIFIED, sref2), listeners4);
         assertEquals("The service should be hidden from these listeners", 0, listeners4.size());
         assertEquals("There should be an additional proxy for client 2", 2, gpc.proxyMap.size());
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref2, client1BC)));
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref2, client2BC)));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(service2ID, client1ID)));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(service2ID, client2ID)));
 
+        long service3ID = 1L;
         Dictionary<String, Object> props3 = new Hashtable<String, Object>();
-        props3.put(Constants.SERVICE_ID, 1L);
+        props3.put(Constants.SERVICE_ID, service3ID);
         props3.put("foo", "bar");
         ServiceReference<?> sref3 = mockServiceReference(props3);
 
@@ -119,9 +125,9 @@ public class GuardingEventHookTest {
         geh.event(new ServiceEvent(ServiceEvent.REGISTERED, sref3), listeners5);
         assertEquals("There should be an additional procy for client1 to the new service", 3, gpc.proxyMap.size());
         assertEquals("The service should be hidden from these listeners", 0, listeners5.size());
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref2, client1BC)));
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref2, client2BC)));
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref3, client1BC)));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(service2ID, client1ID)));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(service2ID, client2ID)));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(service3ID, client1ID)));
     }
 
     @SuppressWarnings("unchecked")

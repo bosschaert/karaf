@@ -79,8 +79,9 @@ public class GuardingFindHookTest {
         assertEquals("The service doesn't match the filter so should be presented to the client",
                 Collections.singletonList(sref), refs);
 
+        long service2ID = 17L;
         Dictionary<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(Constants.SERVICE_ID, 17L);
+        props2.put(Constants.SERVICE_ID, service2ID);
         props2.put("foo", new Object());
         ServiceReference<?> sref2 = mockServiceReference(props2);
 
@@ -122,13 +123,14 @@ public class GuardingFindHookTest {
         refs4.add(sref2);
 
         // another client should get another proxy
-        BundleContext client2BC = mockBundleContext(32768L);
+        long client2ID = 32768L;
+        BundleContext client2BC = mockBundleContext(client2ID);
         gfh.find(client2BC, null, null, true, refs4);
         assertEquals("The service should be hidden for this new client", 0, refs4.size());
         assertEquals("A proxy creation job should have been created", 1, gpc.createProxyQueue.size());
         assertEquals("A new proxy for a new client should have been created", 2, gpc.proxyMap.size());
         assertNotNull(gpc.proxyMap.get(pmk));
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref2, client2BC)));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(service2ID, client2ID)));
     }
 
     @SuppressWarnings("unchecked")
@@ -272,7 +274,8 @@ public class GuardingFindHookTest {
         GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
 
         String roleFilter = "(&(a.b=*)(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole))";
-        BundleContext clientBC = mockBundleContext(98765L);
+        long clientID = 98765L;
+        BundleContext clientBC = mockBundleContext(clientID);
 
         // Test that calling find with a condition on the roles property will create a service tracker
         // without that condition
@@ -287,24 +290,28 @@ public class GuardingFindHookTest {
         assertTrue(mst.getTrackingCount() >= 0);
 
         // Let another client find on the same condition, it should be added to the same MST
-        BundleContext client2BC = mockBundleContext(32767L);
+        long client2ID = 32767L;
+        BundleContext client2BC = mockBundleContext(client2ID);
+
+        long serviceID = 51L;
         Hashtable<String, Object> props = new Hashtable<String, Object>();
-        props.put(Constants.SERVICE_ID, 51L);
+        props.put(Constants.SERVICE_ID, serviceID);
         props.put("a.b", 10);
         ServiceReference<?> sref = mockServiceReference(props);
         assertTrue("This service should match the filter without the roles piece", nonRoleFilter.match(sref));
         Collection<ServiceReference<?>> refs = new HashSet<ServiceReference<?>>(Arrays.<ServiceReference<?>>asList(sref));
         gfh.find(client2BC, null, roleFilter, true, refs);
         assertEquals(1, gpc.proxyMap.size());
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(sref, client2BC)));
+        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(serviceID, client2ID)));
 
         assertEquals("The additional client interest in the same filter should have added it to the list of interested bundles",
                 2, mst.clientBCs.size());
         assertTrue(mst.clientBCs.contains(clientBC));
         assertTrue(mst.clientBCs.contains(client2BC));
 
+        long service2ID = 52L;
         Hashtable<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(Constants.SERVICE_ID, 52L);
+        props2.put(Constants.SERVICE_ID, service2ID);
         props2.put("a.b", 10);
         ServiceReference<Object> sref2 = mockServiceReference(props2);
         mst.addingService(sref2);
@@ -312,9 +319,9 @@ public class GuardingFindHookTest {
         // Let the MST receive a callback of the new (matching) service. It should create 2 new proxies, one for each client
         assertEquals("Should have added 2 proxies, one for each client", 3, gpc.proxyMap.size());
         Set<ProxyMapKey> expectedKeys = new HashSet<ProxyMapKey>(Arrays.asList(
-                new ProxyMapKey(sref, client2BC),
-                new ProxyMapKey(sref2, clientBC),
-                new ProxyMapKey(sref2, client2BC)));
+                new ProxyMapKey(serviceID, client2ID),
+                new ProxyMapKey(service2ID, clientID),
+                new ProxyMapKey(service2ID, client2ID)));
         assertEquals(expectedKeys, gpc.proxyMap.keySet());
 
         // If the MST receives a callback that doesn't match the main proxifying filter it should have no effect

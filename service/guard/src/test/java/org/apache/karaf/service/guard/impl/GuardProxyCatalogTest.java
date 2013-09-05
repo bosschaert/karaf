@@ -217,8 +217,10 @@ public class GuardProxyCatalogTest {
     @SuppressWarnings({ "unchecked", "rawtypes" })
     @Test
     public void testHandleServiceUnregistering() throws Exception {
-        BundleContext clientBC = openStrictMockBundleContext(mockBundle(12345));
-        BundleContext client2BC = openStrictMockBundleContext(mockBundle(6));
+        long clientID = 12345;
+        long client2ID = 6;
+        BundleContext clientBC = openStrictMockBundleContext(mockBundle(clientID));
+        BundleContext client2BC = openStrictMockBundleContext(mockBundle(client2ID));
         EasyMock.replay(clientBC);
         EasyMock.replay(client2BC);
 
@@ -229,7 +231,8 @@ public class GuardProxyCatalogTest {
         ServiceReference<?> originalRef = mockServiceReference(props);
 
         Hashtable<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
+        long anotherServiceID = 5123456789012345L;
+        props2.put(Constants.SERVICE_ID, anotherServiceID);
         ServiceReference<?> anotherRef = mockServiceReference(props2);
 
         GuardProxyCatalog gpc = new GuardProxyCatalog(mockBundleContext());
@@ -248,9 +251,9 @@ public class GuardProxyCatalogTest {
         ServiceRegistrationHolder srh2 = new GuardProxyCatalog.ServiceRegistrationHolder();
         srh2.registration = proxy2Reg;
 
-        gpc.proxyMap.put(new ProxyMapKey(originalRef, clientBC), srh);
-        gpc.proxyMap.put(new ProxyMapKey(originalRef, client2BC), new GuardProxyCatalog.ServiceRegistrationHolder());
-        gpc.proxyMap.put(new ProxyMapKey(anotherRef, clientBC), srh2);
+        gpc.proxyMap.put(new ProxyMapKey(originalServiceID, clientID), srh);
+        gpc.proxyMap.put(new ProxyMapKey(originalServiceID, client2ID), new GuardProxyCatalog.ServiceRegistrationHolder());
+        gpc.proxyMap.put(new ProxyMapKey(anotherServiceID, clientID), srh2);
         assertEquals("Precondition", 3, gpc.proxyMap.size());
 
         gpc.createProxyQueue.put(new MockCreateProxyRunnable(originalServiceID));
@@ -281,15 +284,17 @@ public class GuardProxyCatalogTest {
     @SuppressWarnings({ "unchecked", "rawtypes" })
     @Test
     public void testHandleClientBundleStopping() throws Exception {
+        long clientID = 12345L;
         Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
-        EasyMock.expect(clientBundle.getBundleId()).andReturn(12345L).anyTimes();
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(clientID).anyTimes();
         BundleContext clientBC = openStrictMockBundleContext(clientBundle);
         EasyMock.replay(clientBC);
         EasyMock.expect(clientBundle.getBundleContext()).andReturn(clientBC).anyTimes();
         EasyMock.replay(clientBundle);
 
+        long client2ID = 6L;
         Bundle client2Bundle = EasyMock.createNiceMock(Bundle.class);
-        EasyMock.expect(client2Bundle.getBundleId()).andReturn(6L).anyTimes();
+        EasyMock.expect(client2Bundle.getBundleId()).andReturn(client2ID).anyTimes();
         BundleContext client2BC = openStrictMockBundleContext(client2Bundle);
         EasyMock.replay(client2BC);
         EasyMock.expect(client2Bundle.getBundleContext()).andReturn(client2BC).anyTimes();
@@ -298,11 +303,10 @@ public class GuardProxyCatalogTest {
         Hashtable<String, Object> props = new Hashtable<String, Object>();
         long originalServiceID = 12345678901234L;
         props.put(Constants.SERVICE_ID, new Long(originalServiceID));
-        ServiceReference<?> originalRef = mockServiceReference(props);
 
         Hashtable<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(Constants.SERVICE_ID, new Long(5123456789012345L));
-        ServiceReference<?> anotherRef = mockServiceReference(props2);
+        long anotherServiceID = 5123456789012345L;
+        props2.put(Constants.SERVICE_ID, anotherServiceID);
 
         BundleContext hookBC = mockBundleContext();
         GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
@@ -325,9 +329,9 @@ public class GuardProxyCatalogTest {
         ServiceRegistrationHolder srh2 = new GuardProxyCatalog.ServiceRegistrationHolder();
         srh2.registration = proxy2Reg;
 
-        gpc.proxyMap.put(new ProxyMapKey(originalRef, clientBC), srh);
-        gpc.proxyMap.put(new ProxyMapKey(originalRef, client2BC), new GuardProxyCatalog.ServiceRegistrationHolder());
-        gpc.proxyMap.put(new ProxyMapKey(anotherRef, clientBC), srh2);
+        gpc.proxyMap.put(new ProxyMapKey(originalServiceID, clientID), srh);
+        gpc.proxyMap.put(new ProxyMapKey(originalServiceID, client2ID), new GuardProxyCatalog.ServiceRegistrationHolder());
+        gpc.proxyMap.put(new ProxyMapKey(anotherServiceID, clientID), srh2);
         assertEquals("Precondition", 3, gpc.proxyMap.size());
 
         gpc.createProxyQueue.put(new MockCreateProxyRunnable(clientBC));
@@ -937,7 +941,7 @@ public class GuardProxyCatalogTest {
         assertEquals(1, gpc.createProxyQueue.size());
 
         // The actual proxy creation is done asynchronously.
-        GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new GuardProxyCatalog.ProxyMapKey(sr, clientBC));
+        GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new ProxyMapKey(162L, 999L));
         assertNull("The registration shouldn't have happened yet", holder.registration);
         assertEquals(1, gpc.createProxyQueue.size());
 
@@ -1022,9 +1026,10 @@ public class GuardProxyCatalogTest {
         BundleContext bc = mockConfigAdminBundleContext(config, config2);
         GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
         // The service being proxied has these properties
+        long serviceID = 1L;
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
         serviceProps.put(Constants.OBJECTCLASS, new String [] {TestServiceAPI.class.getName(), TestServiceAPI2.class.getName()});
-        serviceProps.put(Constants.SERVICE_ID, 1L);
+        serviceProps.put(Constants.SERVICE_ID, serviceID);
         serviceProps.put(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY, Arrays.asList("someone")); // will be overwritten
         Object myObject = new Object();
         serviceProps.put("foo.bar", myObject);
@@ -1081,8 +1086,9 @@ public class GuardProxyCatalogTest {
         ServiceReference sr = mockServiceReference(providerBundle, serviceProps);
 
         // The mock bundle that consumes the service
+        long clientID = 678L;
         Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
-        EasyMock.expect(clientBundle.getBundleId()).andReturn(678L).anyTimes();
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(clientID).anyTimes();
         EasyMock.expect(clientBundle.loadClass(TestServiceAPI.class.getName())).andReturn((Class) TestServiceAPI.class).anyTimes();
         EasyMock.expect(clientBundle.loadClass(TestServiceAPI2.class.getName())).andReturn((Class) TestServiceAPI2.class).anyTimes();
         EasyMock.replay(clientBundle);
@@ -1097,7 +1103,7 @@ public class GuardProxyCatalogTest {
         GuardProxyCatalog.CreateProxyRunnable runnable = gpc.createProxyQueue.take();
         runnable.run(getProxyManager());
 
-        ServiceRegistrationHolder holder = gpc.proxyMap.get(new GuardProxyCatalog.ProxyMapKey(sr, clientBC));
+        ServiceRegistrationHolder holder = gpc.proxyMap.get(new ProxyMapKey(serviceID, clientID));
         ServiceRegistration<?> reg = holder.registration;
 
         for (String key : serviceProps.keySet()) {
@@ -1146,9 +1152,10 @@ public class GuardProxyCatalogTest {
         GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
 
         // The service being proxied has these properties
+        long serviceID = 456L;
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
         serviceProps.put(Constants.OBJECTCLASS, new String [] {intf.getName()});
-        serviceProps.put(Constants.SERVICE_ID, 456L);
+        serviceProps.put(Constants.SERVICE_ID, serviceID);
         serviceProps.put(".foo", 123L);
 
         final Map<ServiceReference<?>, Object> serviceMap = new HashMap<ServiceReference<?>, Object>();
@@ -1157,7 +1164,8 @@ public class GuardProxyCatalogTest {
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
         // These are the expected service properties of the proxy registration. Note the proxy marker...
         final Hashtable<String, Object> expectedProxyProps = new Hashtable<String, Object>(serviceProps);
-        expectedProxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
+        long clientBundleID = 1999L;
+        expectedProxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, clientBundleID);
         // This will check that the right proxy is being registered.
         EasyMock.expect(providerBC.registerService(
                 EasyMock.isA(String[].class),
@@ -1215,7 +1223,7 @@ public class GuardProxyCatalogTest {
 
         // The mock bundle that consumes the service
         Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
-        EasyMock.expect(clientBundle.getBundleId()).andReturn(999L).anyTimes();
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(clientBundleID).anyTimes();
         EasyMock.expect(clientBundle.loadClass(intf.getName())).andReturn(intf).anyTimes();
         EasyMock.replay(clientBundle);
 
@@ -1232,7 +1240,7 @@ public class GuardProxyCatalogTest {
         assertEquals(1, gpc.proxyMap.size());
 
         // The actual proxy creation is done asynchronously.
-        GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new GuardProxyCatalog.ProxyMapKey(sr, clientBC));
+        GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new ProxyMapKey(serviceID, clientBundleID));
         assertNull("The registration shouldn't have happened yet", holder.registration);
         assertEquals(1, gpc.createProxyQueue.size());
 
@@ -1302,9 +1310,10 @@ public class GuardProxyCatalogTest {
         GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
 
         // The service being proxied has these properties
+        long serviceID = Long.MAX_VALUE;
         final Hashtable<String, Object> serviceProps = new Hashtable<String, Object>();
         serviceProps.put(Constants.OBJECTCLASS, objClsMap.keySet().toArray(new String [] {}));
-        serviceProps.put(Constants.SERVICE_ID, Long.MAX_VALUE);
+        serviceProps.put(Constants.SERVICE_ID, serviceID);
         serviceProps.put(GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY, Arrays.asList("everyone")); // will be overwritten
         serviceProps.put("bar", "foo");
 
@@ -1312,7 +1321,8 @@ public class GuardProxyCatalogTest {
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
         // These are the expected service properties of the proxy registration. Note the proxy marker...
         final Hashtable<String, Object> expectedProxyProps = new Hashtable<String, Object>(serviceProps);
-        expectedProxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 999L);
+        long clientBundleID = 2999L;
+        expectedProxyProps.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, clientBundleID);
         // This will check that the right proxy is being registered.
         EasyMock.expect(providerBC.registerService(
                 EasyMock.isA(String[].class),
@@ -1377,7 +1387,7 @@ public class GuardProxyCatalogTest {
 
         // The mock bundle that consumes the service
         Bundle clientBundle = EasyMock.createNiceMock(Bundle.class);
-        EasyMock.expect(clientBundle.getBundleId()).andReturn(999L).anyTimes();
+        EasyMock.expect(clientBundle.getBundleId()).andReturn(clientBundleID).anyTimes();
         EasyMock.expect(clientBundle.loadClass(EasyMock.isA(String.class))).andAnswer(new IAnswer() {
             @Override
             public Class answer() throws Throwable {
@@ -1399,7 +1409,7 @@ public class GuardProxyCatalogTest {
         assertEquals(1, gpc.proxyMap.size());
 
         // The actual proxy creation is done asynchronously.
-        GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new GuardProxyCatalog.ProxyMapKey(sr, clientBC));
+        GuardProxyCatalog.ServiceRegistrationHolder holder = gpc.proxyMap.get(new ProxyMapKey(serviceID, clientBundleID));
         assertNull("The registration shouldn't have happened yet", holder.registration);
         assertEquals(1, gpc.createProxyQueue.size());
 
