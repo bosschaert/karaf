@@ -249,47 +249,8 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             return false;
         }
 
-        if (!needsProxy(sr)) {
-            // There is no ACL configuration for this service, so no need to proxy it
-            return false;
-        }
-
         proxyIfNotAlreadyProxied(sr, clientBC); // Note does most of the work async
         return true;
-    }
-
-    // Returns true if there is an ACL configuration for the service. Without that there is no point in proxying
-    // Note that this method does not take the global system property filter into account
-    boolean needsProxy(ServiceReference<?> sref) {
-        // When this method is called the configuration really needs to be available, if it is going to be there
-        // proxying services after a client already obtained the original one doesn't work
-
-        Boolean val = needsProxyCache.get(sref);
-        if (val != null) {
-            return val;
-        }
-
-        try {
-            boolean needsProxy = false;
-            for (Configuration c : getServiceGuardConfigs()) {
-                Object guardFilter = c.getProperties().get(SERVICE_GUARD_KEY);
-                if (guardFilter instanceof String) {
-                    Filter f = myBundleContext.createFilter((String) guardFilter);
-                    if (f.match(sref)) {
-                        needsProxy = true;
-                        break;
-                    }
-                }
-            }
-
-            // There is a possibility that two threads will race to do this work, in that case we just let
-            // the first one win.
-            needsProxyCache.putIfAbsent(sref, needsProxy);
-            return needsProxy;
-        } catch (Exception e) {
-            log.error("Problem checking service ACL configuration", e);
-            return false;
-        }
     }
 
     void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC)  {
