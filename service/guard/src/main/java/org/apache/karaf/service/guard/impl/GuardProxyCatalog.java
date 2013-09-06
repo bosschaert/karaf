@@ -74,8 +74,9 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     static final String SERVICE_GUARD_KEY = "service.guard";
     static final Logger log = LoggerFactory.getLogger(GuardProxyCatalog.class);
 
-    private static final String ROLE_WILDCARD = "*";
     private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
+    private static final String ROLE_WILDCARD = "*";
+    private static final Long SHARED_PROXY_MARKER = -1L;
 
     private final BundleContext myBundleContext;
     private final long myBundleID; // the bundlecontext isn't always available
@@ -190,10 +191,16 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
                 if (reg != null) {
                     // Preserve the roles as they are expensive to compute
                     Object roles = reg.getReference().getProperty(SERVICE_GUARD_ROLES_PROPERTY);
+                    Object targetBundle = reg.getReference().getProperty(PROXY_FOR_BUNDLE_KEY);
                     Dictionary<String, Object> newProxyProps = proxyProperties(
                             orgServiceRef, entry.getKey().clientBundleID,
                             (Long) orgServiceRef.getProperty(Constants.SERVICE_ID));
-                    newProxyProps.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+                    if (roles != null) {
+                        newProxyProps.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+                    } else {
+                        newProxyProps.remove(SERVICE_GUARD_ROLES_PROPERTY); // TODO write unit test for this
+                    }
+                    newProxyProps.put(PROXY_FOR_BUNDLE_KEY, targetBundle); // This is SHARED_PROXY_KEY if the proxy is shared across clients
                     reg.setProperties(newProxyProps);
                 }
             }
@@ -234,7 +241,11 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
     }
 
     boolean isProxyFor(ServiceReference<?> sr, BundleContext clientBC) {
-        return new Long(clientBC.getBundle().getBundleId()).equals(sr.getProperty(PROXY_FOR_BUNDLE_KEY));
+        Object proxyForBundle = sr.getProperty(PROXY_FOR_BUNDLE_KEY);
+        if (SHARED_PROXY_MARKER.equals(proxyForBundle))
+            return true;
+
+        return new Long(clientBC.getBundle().getBundleId()).equals(proxyForBundle);
     }
 
     // Called by hooks to find out whether the service should be hidden.
@@ -246,6 +257,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         // 'singleton' then the same proxy can be shared across all clients.
         // Pre OSGi R6 it is not possible to find out whether a service is backed by a
         // Service Factory, so we assume that every service is.
+
         if (isProxy(sr)) {
             if (!isProxyFor(sr, clientBC)) {
                 // This proxy is for another bundle
@@ -258,9 +270,29 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
         return true;
     }
 
+    private boolean isServiceFactory(ServiceReference<?> sr) {
+        // This is a hack to figure this out in pre-R6 OSGi frameworks
+        try {
+            Object o1 = myBundleContext.getService(sr);
+            Object o2 = myBundleContext.getBundle(0).getBundleContext().getService(sr);
+            return !o1.equals(o2);
+        } finally {
+            myBundleContext.getBundle(0).getBundleContext().ungetService(sr);
+            myBundleContext.ungetService(sr);
+        }
+    }
+
     void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef, final BundleContext clientBC)  {
         final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
-        final long clientBundleID = clientBC.getBundle().getBundleId();
+        final long clientBundleID;
+
+        if (isServiceFactory(originalRef)) {
+            // Every client needs its own proxy
+            clientBundleID = clientBC.getBundle().getBundleId();
+        } else {
+            // Clients can share proxies
+            clientBundleID = -1;
+        }
 
         // make sure it's on the map before the proxy is registered, as that can trigger
         // another call into this method, and we need to make sure that it doesn't proxy
@@ -360,7 +392,7 @@ public class GuardProxyCatalog implements ServiceListener, BundleListener {
             }
 
             private Dictionary<String, Object> proxyPropertiesRoles() throws Exception {
-                Dictionary<String, Object> p = proxyProperties(originalRef, clientBC.getBundle().getBundleId(), orgServiceID);
+                Dictionary<String, Object> p = proxyProperties(originalRef, clientBundleID, orgServiceID);
 
                 Set<String> roles = getServiceInvocationRoles(originalRef);
 
