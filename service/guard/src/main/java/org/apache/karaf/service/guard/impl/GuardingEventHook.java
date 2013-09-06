@@ -61,7 +61,7 @@ class GuardingEventHook implements EventListenerHook {
                 continue;
             }
 
-            if (guardProxyCatalog.handleProxificationForHook(sr, bc)) {
+            if (guardProxyCatalog.handleProxificationForHook(sr)) {
                 i.remove();
             }
         }

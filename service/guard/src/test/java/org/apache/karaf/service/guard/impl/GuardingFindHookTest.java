@@ -19,7 +19,6 @@ package org.apache.karaf.service.guard.impl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
@@ -33,7 +32,6 @@ import java.util.Hashtable;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.karaf.service.guard.impl.GuardProxyCatalog.ProxyMapKey;
 import org.apache.karaf.service.guard.impl.GuardingFindHook.MultiplexingServiceTracker;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
@@ -92,9 +90,7 @@ public class GuardingFindHookTest {
         assertEquals("The service should be hidden from the client", 0, refs2.size());
         assertEquals("The service should have caused a proxy creation", 1, gpc.proxyMap.size());
         assertEquals("A proxy creation job should have been created", 1, gpc.createProxyQueue.size());
-        ProxyMapKey pmk = gpc.proxyMap.keySet().iterator().next();
-        assertEquals(clientBC.getBundle().getBundleId(), pmk.clientBundleID);
-        assertEquals(sref2.getProperty(Constants.SERVICE_ID), pmk.originalServiceID);
+        assertEquals(sref2.getProperty(Constants.SERVICE_ID), gpc.proxyMap.keySet().iterator().next());
 
         Collection<ServiceReference<?>> refs3 = new ArrayList<ServiceReference<?>>();
         refs3.add(sref2);
@@ -103,13 +99,13 @@ public class GuardingFindHookTest {
         gfh.find(hookBC, null, null, true, refs3);
         assertEquals("The service should not be hidden from the hook bundle", Collections.singletonList(sref2), refs3);
         assertEquals("No proxy creation caused in this case", 1, gpc.proxyMap.size());
-        assertSame(pmk, gpc.proxyMap.keySet().iterator().next());
+        assertEquals("No change expected", sref2.getProperty(Constants.SERVICE_ID), gpc.proxyMap.keySet().iterator().next());
 
         // Ensure that the system bundle has nothing hidden
         gfh.find(mockBundleContext(0L), null, null, true, refs3);
         assertEquals("The service should not be hidden from the framework bundle", Collections.singletonList(sref2), refs3);
         assertEquals("No proxy creation caused in this case", 1, gpc.proxyMap.size());
-        assertSame(pmk, gpc.proxyMap.keySet().iterator().next());
+        assertEquals("No change expected", sref2.getProperty(Constants.SERVICE_ID), gpc.proxyMap.keySet().iterator().next());
 
         // Ensure that if we ask for the same client again, it will not create another proxy
         gpc.createProxyQueue.clear(); // Manually empty the queue
@@ -117,20 +113,18 @@ public class GuardingFindHookTest {
         assertEquals("The service should be hidden from the client", 0, refs3.size());
         assertEquals("There is already a proxy for this client, no need for an additional one", 1, gpc.proxyMap.size());
         assertEquals("No additional jobs should have been scheduled", 0, gpc.createProxyQueue.size());
-        assertSame(pmk, gpc.proxyMap.keySet().iterator().next());
+        assertEquals("No change expected", sref2.getProperty(Constants.SERVICE_ID), gpc.proxyMap.keySet().iterator().next());
 
         Collection<ServiceReference<?>> refs4 = new ArrayList<ServiceReference<?>>();
         refs4.add(sref2);
 
-        // another client should get another proxy
-        long client2ID = 32768L;
-        BundleContext client2BC = mockBundleContext(client2ID);
+        // another client should not get another proxy
+        BundleContext client2BC = mockBundleContext(32768L);
         gfh.find(client2BC, null, null, true, refs4);
         assertEquals("The service should be hidden for this new client", 0, refs4.size());
-        assertEquals("A proxy creation job should have been created", 1, gpc.createProxyQueue.size());
-        assertEquals("A new proxy for a new client should have been created", 2, gpc.proxyMap.size());
-        assertNotNull(gpc.proxyMap.get(pmk));
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(service2ID, client2ID)));
+        assertEquals("No proxy creation job should have been created", 0, gpc.createProxyQueue.size());
+        assertEquals("No proxy creation caused in this case", 1, gpc.proxyMap.size());
+        assertEquals("No change expected", sref2.getProperty(Constants.SERVICE_ID), gpc.proxyMap.keySet().iterator().next());
     }
 
     @SuppressWarnings("unchecked")
@@ -149,28 +143,15 @@ public class GuardingFindHookTest {
 
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put(Constants.SERVICE_ID, 16L);
-        props.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, 12L);
+        props.put(GuardProxyCatalog.PROXY_SERVICE_KEY, Boolean.TRUE);
         ServiceReference<?> sref = mockServiceReference(props);
 
         Collection<ServiceReference<?>> refs = new ArrayList<ServiceReference<?>>();
         refs.add(sref);
-
-        assertEquals("Precondition", 0, gpc.proxyMap.size());
         gfh.find(clientBC, null, null, false, refs);
         assertEquals("No proxy should have been created for the proxy find", 0, gpc.proxyMap.size());
-        assertEquals("The proxy for a different bundle should have been hidden from the client", 0, refs.size());
-
-        Dictionary<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(Constants.SERVICE_ID, 16L);
-        props2.put(GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY, clientBC.getBundle().getBundleId());
-        ServiceReference<?> sref2 = mockServiceReference(props2);
-
-        Collection<ServiceReference<?>> refs2 = new ArrayList<ServiceReference<?>>();
-        refs2.add(sref2);
-        gfh.find(clientBC, null, null, false, refs2);
-        assertEquals("No proxy should have been created for the proxy find", 0, gpc.proxyMap.size());
         assertEquals("As the proxy is for this bundle is should be visible and remain on the list",
-                Collections.singletonList(sref2), refs2);
+                Collections.singletonList(sref), refs);
     }
 
     @Test
@@ -207,10 +188,10 @@ public class GuardingFindHookTest {
         // Check that the filter created to find service that don't have the roles matches the right services
         assertTrue(nrf.match(dict("test=value")));
         assertTrue(nrf.match(dict("test=value2", "foo=bar")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=12")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole", GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=12")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=12")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=12")));
         assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole",
-                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=testrole", GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=12")));
+                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=testrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=12")));
     }
 
     @Test
@@ -225,9 +206,9 @@ public class GuardingFindHookTest {
         assertTrue(nrf.match(dict("test.test=value", "x=5")));
         assertTrue(nrf.match(dict("test=value", "x=999")));
         assertFalse(nrf.match(dict("test=value", "x=5")));
-        assertFalse(nrf.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=2")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole", GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=2")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=2",
+        assertFalse(nrf.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=2")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=2")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=2",
                 GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
     }
 
@@ -274,8 +255,7 @@ public class GuardingFindHookTest {
         GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
 
         String roleFilter = "(&(a.b=*)(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole))";
-        long clientID = 98765L;
-        BundleContext clientBC = mockBundleContext(clientID);
+        BundleContext clientBC = mockBundleContext(98765L);
 
         // Test that calling find with a condition on the roles property will create a service tracker
         // without that condition
@@ -290,8 +270,7 @@ public class GuardingFindHookTest {
         assertTrue(mst.getTrackingCount() >= 0);
 
         // Let another client find on the same condition, it should be added to the same MST
-        long client2ID = 32767L;
-        BundleContext client2BC = mockBundleContext(client2ID);
+        BundleContext client2BC = mockBundleContext(32767L);
 
         long serviceID = 51L;
         Hashtable<String, Object> props = new Hashtable<String, Object>();
@@ -302,7 +281,7 @@ public class GuardingFindHookTest {
         Collection<ServiceReference<?>> refs = new HashSet<ServiceReference<?>>(Arrays.<ServiceReference<?>>asList(sref));
         gfh.find(client2BC, null, roleFilter, true, refs);
         assertEquals(1, gpc.proxyMap.size());
-        assertNotNull(gpc.proxyMap.get(new ProxyMapKey(serviceID, client2ID)));
+        assertNotNull(gpc.proxyMap.get(serviceID));
 
         assertEquals("The additional client interest in the same filter should have added it to the list of interested bundles",
                 2, mst.clientBCs.size());
@@ -316,12 +295,9 @@ public class GuardingFindHookTest {
         ServiceReference<Object> sref2 = mockServiceReference(props2);
         mst.addingService(sref2);
 
-        // Let the MST receive a callback of the new (matching) service. It should create 2 new proxies, one for each client
-        assertEquals("Should have added 2 proxies, one for each client", 3, gpc.proxyMap.size());
-        Set<ProxyMapKey> expectedKeys = new HashSet<ProxyMapKey>(Arrays.asList(
-                new ProxyMapKey(serviceID, client2ID),
-                new ProxyMapKey(service2ID, clientID),
-                new ProxyMapKey(service2ID, client2ID)));
+        // Let the MST receive a callback of the new (matching) service. It should a new shared proxy for both clients
+        assertEquals("Should have added a new proxy for the service", 2, gpc.proxyMap.size());
+        Set<Long> expectedKeys = new HashSet<Long>(Arrays.asList(serviceID, service2ID));
         assertEquals(expectedKeys, gpc.proxyMap.keySet());
 
         // If the MST receives a callback that doesn't match the main proxifying filter it should have no effect
@@ -474,7 +450,7 @@ public class GuardingFindHookTest {
             }
         }).anyTimes();
         String cmFilter = "(&(objectClass=" + ConfigurationAdmin.class.getName() + ")"
-                + "(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*)))";
+                + "(!(" + GuardProxyCatalog.PROXY_SERVICE_KEY + "=*)))";
         bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(cmFilter));
         EasyMock.expectLastCall().anyTimes();
         EasyMock.expect(bc.getServiceReferences(EasyMock.anyObject(String.class), EasyMock.eq(cmFilter))).

@@ -91,7 +91,7 @@ class GuardingFindHook implements FindHook, BundleListener {
                 continue;
             }
 
-            if (guardProxyCatalog.handleProxificationForHook(sr, context)) {
+            if (guardProxyCatalog.handleProxificationForHook(sr)) {
                 i.remove();
             }
         }
@@ -106,7 +106,7 @@ class GuardingFindHook implements FindHook, BundleListener {
         String nonRoleFilter = GUARD_ROLES_CONDITION_PATTERN.matcher(filter).replaceAll("@");
         nonRoleFilter = EMTPY_BRACES_PATTRN.matcher(nonRoleFilter).replaceAll("@");
         nonRoleFilter = AT_SIGNS_PATTERN.matcher(nonRoleFilter).
-                replaceAll("(!(" + GuardProxyCatalog.PROXY_FOR_BUNDLE_KEY + "=*))");
+                replaceAll("(!(" + GuardProxyCatalog.PROXY_SERVICE_KEY + "=*))");
 
         // Find/create a new MST. This tracker will track the filter for a number of bundle contexts.
         boolean newTracker = false;
@@ -184,12 +184,10 @@ class GuardingFindHook implements FindHook, BundleListener {
         @Override
         public Object addingService(ServiceReference<Object> reference) {
             // So there is a new service that matches the filter.
-            // We now need to make sure that there is are matching proxies for it too
+            // We now need to make sure that there is a matching proxy for it too
             // to that all the interested clients can see it...
             if (servicesFilter.match(reference)) {
-                for (BundleContext bc : clientBCs) {
-                    guardProxyCatalog.handleProxificationForHook(reference, bc);
-                }
+                guardProxyCatalog.handleProxificationForHook(reference);
             }
             return super.addingService(reference);
         }
