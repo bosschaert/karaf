@@ -140,7 +140,7 @@ public class GuardingEventHookTest {
         // Create a proxy service mock
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put(Constants.SERVICE_ID, 13L);
-        props.put(GuardProxyCatalog.PROXY_SERVICE_KEY, client1BC.getBundle().getBundleId());
+        props.put(GuardProxyCatalog.PROXY_SERVICE_KEY, Boolean.TRUE);
         ServiceReference<?> sref = mockServiceReference(props);
         Map<BundleContext, Collection<ListenerInfo>> listeners = new HashMap<BundleContext, Collection<ListenerInfo>>();
         listeners.put(client1BC, Collections.<ListenerInfo>emptyList());

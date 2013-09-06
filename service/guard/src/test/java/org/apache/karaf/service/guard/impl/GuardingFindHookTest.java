@@ -188,10 +188,10 @@ public class GuardingFindHookTest {
         // Check that the filter created to find service that don't have the roles matches the right services
         assertTrue(nrf.match(dict("test=value")));
         assertTrue(nrf.match(dict("test=value2", "foo=bar")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=12")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=12")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
         assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole",
-                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=testrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=12")));
+                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=testrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
     }
 
     @Test
@@ -206,9 +206,9 @@ public class GuardingFindHookTest {
         assertTrue(nrf.match(dict("test.test=value", "x=5")));
         assertTrue(nrf.match(dict("test=value", "x=999")));
         assertFalse(nrf.match(dict("test=value", "x=5")));
-        assertFalse(nrf.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=2")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=2")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=2",
+        assertFalse(nrf.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
+        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true",
                 GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
     }
 

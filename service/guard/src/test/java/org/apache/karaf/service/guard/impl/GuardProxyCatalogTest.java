@@ -112,7 +112,7 @@ public class GuardProxyCatalogTest {
         GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
 
         Dictionary<String, Object> props = new Hashtable<String, Object>();
-        props.put(GuardProxyCatalog.PROXY_SERVICE_KEY, 12L);
+        props.put(GuardProxyCatalog.PROXY_SERVICE_KEY, Boolean.TRUE);
         assertTrue(gpc.isProxy(mockServiceReference(props)));
         assertFalse(gpc.isProxy(mockServiceReference(new Hashtable<String, Object>())));
     }
@@ -126,11 +126,10 @@ public class GuardProxyCatalogTest {
         BundleContext bc = mockConfigAdminBundleContext(config);
         GuardProxyCatalog gpc = new GuardProxyCatalog(bc);
 
-        long clientBundleID = 42L;
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put(Constants.SERVICE_ID, 13L);
         props.put("a", "6");
-        props.put(GuardProxyCatalog.PROXY_SERVICE_KEY, clientBundleID);
+        props.put(GuardProxyCatalog.PROXY_SERVICE_KEY, Boolean.TRUE);
         ServiceReference<?> sref2 = mockServiceReference(props);
         assertFalse("Should not hide an existing proxy for this client",
                 gpc.handleProxificationForHook(sref2));
@@ -193,7 +192,7 @@ public class GuardProxyCatalogTest {
         assertEquals("Registered events should be ignored", 2, gpc.createProxyQueue.size());
 
         Hashtable<String, Object> proxyProps = new Hashtable<String, Object>(props);
-        proxyProps.put(GuardProxyCatalog.PROXY_SERVICE_KEY, 999L);
+        proxyProps.put(GuardProxyCatalog.PROXY_SERVICE_KEY, Boolean.TRUE);
         ServiceReference<?> proxyRef = mockServiceReference(proxyProps);
         gpc.serviceChanged(new ServiceEvent(ServiceEvent.UNREGISTERING, proxyRef));
         assertEquals("Unregistering the proxy should be ignored by the listener", 2, gpc.proxyMap.size());
@@ -712,7 +711,7 @@ public class GuardProxyCatalogTest {
         BundleContext providerBC = EasyMock.createMock(BundleContext.class);
         // These are the expected service properties of the proxy registration. Note the proxy marker...
         final Hashtable<String, Object> expectedProxyProps = new Hashtable<String, Object>(serviceProps);
-        expectedProxyProps.put(GuardProxyCatalog.PROXY_SERVICE_KEY, 999L);
+        expectedProxyProps.put(GuardProxyCatalog.PROXY_SERVICE_KEY, Boolean.TRUE);
         EasyMock.expect(providerBC.registerService(
                 EasyMock.isA(String[].class),
                 EasyMock.anyObject(),

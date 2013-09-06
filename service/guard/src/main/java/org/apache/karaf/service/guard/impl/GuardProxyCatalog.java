@@ -182,63 +182,21 @@ public class GuardProxyCatalog implements ServiceListener {
                 if (reg != null) {
                     // Preserve the roles as they are expensive to compute
                     Object roles = reg.getReference().getProperty(SERVICE_GUARD_ROLES_PROPERTY);
-                    Object targetBundle = reg.getReference().getProperty(PROXY_SERVICE_KEY);
                     Dictionary<String, Object> newProxyProps = proxyProperties(orgServiceRef);
                     if (roles != null) {
                         newProxyProps.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
                     } else {
                         newProxyProps.remove(SERVICE_GUARD_ROLES_PROPERTY); // TODO write unit test for this
                     }
-                    newProxyProps.put(PROXY_SERVICE_KEY, targetBundle); // This is SHARED_PROXY_KEY if the proxy is shared across clients
                     reg.setProperties(newProxyProps);
                 }
             }
         }
     }
 
-    /*
-    @Override
-    public void bundleChanged(BundleEvent event) {
-        if (event.getType() != BundleEvent.STOPPED) {
-            return;
-        }
-
-        Bundle stoppingBundle = event.getBundle();
-        long stoppingBundleID = stoppingBundle.getBundleId();
-        if ((stoppingBundleID == myBundleID) || (stoppingBundleID == 0)) {
-            // Don't react to this bundle stopping or the system bundle
-            return;
-        }
-
-        for (Iterator<CreateProxyRunnable> i = createProxyQueue.iterator(); i.hasNext(); ) {
-            CreateProxyRunnable cpr = i.next();
-            if (stoppingBundleID == cpr.getClientBundleID()) {
-                i.remove();
-            }
-        }
-
-        for (Iterator<Map.Entry<ProxyMapKey, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
-            Map.Entry<ProxyMapKey, ServiceRegistrationHolder> entry = i.next();
-            if (stoppingBundleID == entry.getKey().clientBundleID) {
-                i.remove();
-                unregisterProxy(entry);
-            }
-        }
-    }
-    */
-
     boolean isProxy(ServiceReference<?> sr) {
         return sr.getProperty(PROXY_SERVICE_KEY) != null;
     }
-
-    // TODO delete
-//    boolean isProxyFor(ServiceReference<?> sr, BundleContext clientBC) {
-//        Object proxyForBundle = sr.getProperty(PROXY_FOR_BUNDLE_KEY);
-//        if (SHARED_PROXY_MARKER.equals(proxyForBundle))
-//            return true;
-//
-//        return new Long(clientBC.getBundle().getBundleId()).equals(proxyForBundle);
-//    }
 
     // Called by hooks to find out whether the service should be hidden.
     // Also handles the proxy creation of services if applicable.
@@ -260,7 +218,6 @@ public class GuardProxyCatalog implements ServiceListener {
 
     void proxyIfNotAlreadyProxied(final ServiceReference<?> originalRef)  {
         final long orgServiceID = (Long) originalRef.getProperty(Constants.SERVICE_ID);
-//        final long clientBundleID = -1;
 
         // make sure it's on the map before the proxy is registered, as that can trigger
         // another call into this method, and we need to make sure that it doesn't proxy
@@ -280,11 +237,6 @@ public class GuardProxyCatalog implements ServiceListener {
         //  2. it also means that we can better react to the fact that the ProxyManager service might arrive
         //     later. As soon as the Proxy Manager is available, the queue is emptied and the proxies created.
         CreateProxyRunnable cpr = new CreateProxyRunnable() {
-//            @Override
-//            public long getClientBundleID() {
-//                return clientBundleID;
-//            }
-
             @Override
             public long getOriginalServiceID() {
                 return orgServiceID;
@@ -465,51 +417,6 @@ public class GuardProxyCatalog implements ServiceListener {
     static class ServiceRegistrationHolder {
         volatile ServiceRegistration<?> registration;
     }
-
-    /**
-     * Key for the proxy map. Note that each service client bundle gets its own proxy as service factories
-     * can cause each client to get a separate service instance.
-     */
-    /*
-    static class ProxyMapKey {
-        final long originalServiceID;
-        final long clientBundleID;
-
-        ProxyMapKey(long originalServiceID, long clientBundleID) {
-            this.originalServiceID = originalServiceID;
-            this.clientBundleID = clientBundleID;
-        }
-
-        @Override
-        public int hashCode() {
-            final int prime = 31;
-            int result = 1;
-            result = prime * result + (int) (clientBundleID ^ (clientBundleID >>> 32));
-            result = prime * result + (int) (originalServiceID ^ (originalServiceID >>> 32));
-            return result;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj)
-                return true;
-            if (obj == null)
-                return false;
-            if (getClass() != obj.getClass())
-                return false;
-            ProxyMapKey other = (ProxyMapKey) obj;
-            if (clientBundleID != other.clientBundleID)
-                return false;
-            if (originalServiceID != other.originalServiceID)
-                return false;
-            return true;
-        }
-
-        @Override
-        public String toString() {
-            return "ProxyMapKey [originalServiceID=" + originalServiceID + ", clientBundleID=" + clientBundleID + "]";
-        }
-    } */
 
     private class ProxyInvocationListener implements InvocationListener {
         private final ServiceReference<?> serviceReference;
