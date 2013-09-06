@@ -1,0 +1,51 @@
+h1. Synopsis
+
+${project.name}
+
+${project.description}
+
+Maven URL:
+[mvn:${project.groupId}/${project.artifactId}/${project.version}]
+
+h1. Description
+Add Role-based access to any OSGi Service
+
+Role-based access is added to existing OSGi services by hiding the
+original service from a client through service registry hooks and
+presenting a proxy to the service that checks the required roles before
+an invocation is made.
+
+To enable the Role-based access for services, the service needs to match
+the filter in the karaf.secured.services system property (typically set
+in etc/system.properties), e.g:
+  karaf.secured.services = (|(objectClass=org.acme*)(foo=bar))
+Only services that match this filter are secured, other services are
+left alone.
+
+Required roles are registered through the OSGi Configuration Admin
+Service. The service PID is not important. For secured services
+configurations with a service.guard property that matches are looked up.
+Then roles associated with the current method, its signature and/or the
+passed arguments are looked up. For example, take the following
+configuration:
+  service.guard = (objectClass=org.acme.MyServiceAPI)
+  myMethod = admin, manager
+If no matching definition for the method being invoked can be found a
+user with any role can invoke the method.
+As with the role-based JMX access, method signatures and arguments
+(either literal or regexp-based) can be matched. 
+
+When roles are checked, these are obtained from the Subject associated
+with the current AccessControlContext. By default the karaf
+RolePrincipal is checked for, but other role implementations can be
+supported through the following syntax:
+  my.custom.RoleImpl:someRole
+  
+The roles required to invoke methods on a service are visible as service
+registration values on a List<String> property with the key:
+  org.apache.karaf.service.guard.roles
+This property contains the union of the roles that can possibly invoke a 
+method on the service. So if role1 can invoke a() and role2 can invoke
+b() the value of this property will be [role1, role2]. If there are public
+methods on the service that can be invoked by everyone this property is 
+not set.
