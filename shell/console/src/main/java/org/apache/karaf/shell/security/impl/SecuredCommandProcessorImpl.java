@@ -1,4 +1,4 @@
-package org.apache.karaf.shell.console.impl.jline;
+package org.apache.karaf.shell.security.impl;
 
 import java.security.AccessControlContext;
 import java.security.AccessController;
@@ -30,7 +30,7 @@ public class SecuredCommandProcessorImpl extends CommandProcessorImpl {
     private final ServiceTracker<Converter, Converter> converterTracker;
     private final ServiceTracker<CommandSessionListener, CommandSessionListener> listenerTracker;
 
-    SecuredCommandProcessorImpl(BundleContext bc) {
+    public SecuredCommandProcessorImpl(BundleContext bc) {
         this(bc, bc.getServiceReference(ThreadIO.class));
     }
 
@@ -79,7 +79,7 @@ public class SecuredCommandProcessorImpl extends CommandProcessorImpl {
         }
     }
 
-    void close() {
+    public void close() {
         commandTracker.close();
         converterTracker.close();
         listenerTracker.close();
