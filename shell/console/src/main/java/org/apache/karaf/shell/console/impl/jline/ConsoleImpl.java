@@ -66,7 +66,7 @@ public class ConsoleImpl implements Console
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Console.class);
 
-    protected volatile CommandSession session; // TODO must be volatile?
+    protected CommandSession session;
     private ConsoleReader reader;
     private BlockingQueue<Integer> queue;
     private boolean interrupt;
@@ -80,7 +80,6 @@ public class ConsoleImpl implements Console
     private PrintStream out;
     private PrintStream err;
     private Thread thread;
-    private final CommandProcessor baseProcessor; // TODO Revisit
     private final BundleContext bundleContext;
 
     public ConsoleImpl(CommandProcessor processor,
@@ -98,14 +97,12 @@ public class ConsoleImpl implements Console
         this.queue = new ArrayBlockingQueue<Integer>(1024);
         this.terminal = term == null ? new UnsupportedTerminal() : term;
         this.consoleInput = new ConsoleInputStream();
-        this.baseProcessor = processor;
-        this.bundleContext = bc;
+        this.session = new DelegateSession();
 
-        // this.session = processor.createSession(this.consoleInput, this.out, this.err); TODO
-        this.session = new InactiveSession();
         this.session.put("SCOPE", "shell:bundle:*");
         this.session.put("SUBSHELL", "");
         this.closeCallback = closeCallback;
+        this.bundleContext = bc;
 
         try {
             reader = new ConsoleReader(null,
@@ -150,7 +147,6 @@ public class ConsoleImpl implements Console
     }
 
     public void close(boolean closedByUser) {
-        //System.err.println("Closing");
         if (!running) {
             return;
         }
@@ -172,26 +168,17 @@ public class ConsoleImpl implements Console
 
     public void run()
     {
-        /* */
-        System.out.println("@@@ Deferred creation of real session");
-        if (!(session instanceof InactiveSession)) {
-            throw new IllegalStateException("Should be an Inactive Session here, about to make it active");
+        if (!(session instanceof DelegateSession)) {
+            throw new IllegalStateException("Should be an Delegate Session here, about to set the delegate");
         }
+        DelegateSession is = (DelegateSession) session;
 
         // make it active
-        MyCommandProcessorImpl myCP = new MyCommandProcessorImpl(bundleContext);
-        CommandSession s = myCP.createSession(consoleInput, out, err);
+        SecuredCommandProcessorImpl secCP = new SecuredCommandProcessorImpl(bundleContext);
+        CommandSession s = secCP.createSession(consoleInput, out, err);
 
-        Map<String, Object> m = ((InactiveSession) session).getAttributes();
-        for (Map.Entry<String, Object> entry : m.entrySet()) {
-            s.put(entry.getKey(), entry.getValue());
-        }
-        ((InactiveSession) session).setDelegate(s);
-        session = s;
-        System.out.println("@@@ created Real Session");
-
-
-        /* */
+        // Before the session is activated attributes may have been set on it. Pass these on to the real session now
+        is.setDelegate(s);
 
         thread = Thread.currentThread();
         CommandSessionHolder.setSession(session);
@@ -230,7 +217,7 @@ public class ConsoleImpl implements Console
             }
         }
 
-        myCP.close();
+        secCP.close();
         close(true);
     }
 
@@ -480,16 +467,24 @@ public class ConsoleImpl implements Console
         }
     }
 
-    private static class InactiveSession implements CommandSession {
+    static class DelegateSession implements CommandSession {
         final Map<String, Object> attrs = new HashMap<String, Object>();
-        private volatile CommandSession delegate;
+        volatile private CommandSession delegate;
 
         @Override
         public Object execute(CharSequence commandline) throws Exception {
+            if (delegate != null)
+                return delegate.execute(commandline);
+
             throw new UnsupportedOperationException();
         }
 
         void setDelegate(CommandSession s) {
+            synchronized (this) {
+                for (Map.Entry<String, Object> entry : attrs.entrySet()) {
+                    s.put(entry.getKey(), entry.getValue());
+                }
+            }
             delegate = s;
         }
 
@@ -523,10 +518,7 @@ public class ConsoleImpl implements Console
             return attrs.get(name);
         }
 
-        Map<String, Object> getAttributes() {
-            return attrs;
-        }
-
+        // You can put attributes on this session before it's delegate is set...
         @Override
         public void put(String name, Object value) {
             if (delegate != null) {
@@ -534,7 +526,10 @@ public class ConsoleImpl implements Console
                 return;
             }
 
-            attrs.put(name, value);
+            // There is no delegate yet, so we'll keep the attributes locally
+            synchronized (this) {
+                attrs.put(name, value);
+            }
         }
 
         @Override
@@ -547,8 +542,8 @@ public class ConsoleImpl implements Console
 
         @Override
         public Object convert(Class<?> type, Object instance) {
-            if (delegate != null)
-                return delegate.convert(type, instance);
+//            if (delegate != null)
+//                return delegate.convert(type, instance);
 
             throw new UnsupportedOperationException();
         }

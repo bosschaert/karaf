@@ -18,36 +18,32 @@ import org.apache.felix.service.command.Function;
 import org.apache.felix.service.threadio.ThreadIO;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.framework.ServiceReference;
 import org.osgi.util.tracker.ServiceTracker;
 
-public class MyCommandProcessorImpl extends CommandProcessorImpl {
+public class SecuredCommandProcessorImpl extends CommandProcessorImpl {
     private final BundleContext bundleContext;
     private final ServiceReference<ThreadIO> threadIOServiceReference;
-    private final String roleClause;
-    private final ServiceTracker commandTracker;
-    private final ServiceTracker converterTracker;
-    private final ServiceTracker listenerTracker;
+    private final ServiceTracker<Object, Object> commandTracker;
+    private final ServiceTracker<Converter, Converter> converterTracker;
+    private final ServiceTracker<CommandSessionListener, CommandSessionListener> listenerTracker;
 
-    MyCommandProcessorImpl(BundleContext bc) {
+    SecuredCommandProcessorImpl(BundleContext bc) {
         this(bc, bc.getServiceReference(ThreadIO.class));
     }
 
-    private MyCommandProcessorImpl(BundleContext bc, ServiceReference<ThreadIO> sr) {
+    private SecuredCommandProcessorImpl(BundleContext bc, ServiceReference<ThreadIO> sr) {
         super(bc.getService(sr));
         bundleContext = bc;
         threadIOServiceReference = sr;
 
         AccessControlContext acc = AccessController.getContext();
         Subject sub = Subject.getSubject(acc);
-        System.out.println("!!! Subject: " + sub);
-
         Set<RolePrincipal> rolePrincipals = sub.getPrincipals(RolePrincipal.class);
         if (rolePrincipals.size() == 0)
-            throw new IllegalStateException("Current user has no associated roles.");
+            throw new SecurityException("Current user has no associated roles.");
 
         // TODO cater for custom roles
         // TODO is this search clause the most efficient way to find the appropriate commands?
@@ -62,7 +58,7 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         }
         sb.append("(!(org.apache.karaf.service.guard.roles=*))"); // Or no roles specified at all
         sb.append(')');
-        roleClause = sb.toString();
+        String roleClause = sb.toString();
 
         addConstant(Activator.CONTEXT, bc);
         addCommand("osgi", this, "addCommand");
@@ -70,8 +66,10 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         addCommand("osgi", this, "eval");
 
         try {
-            commandTracker = trackCommands(bc);
+            // The role clause is used to only display commands that the current user can invoke.
+            commandTracker = trackCommands(bc, roleClause);
             commandTracker.open();
+
             converterTracker = trackConverters(bc);
             converterTracker.open();
             listenerTracker = trackListeners(bc);
@@ -86,33 +84,21 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         converterTracker.close();
         listenerTracker.close();
         bundleContext.ungetService(threadIOServiceReference);
-        System.out.println("*** Closed MyCommandProcessor");
     }
 
-    private ServiceTracker trackCommands(final BundleContext context) throws InvalidSyntaxException
+    private ServiceTracker<Object, Object> trackCommands(final BundleContext context, String roleClause) throws InvalidSyntaxException
     {
         Filter filter = context.createFilter(String.format("(&(%s=*)(%s=*)%s)",
             CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION, roleClause));
-        System.out.println("### ServiceTracker: (" + context.getBundle().getBundleId() + ")");
-        System.out.println("" + filter);
-//        Filter filter = context.createFilter(String.format("(&(!(%s=*))(%s=*))",
-//                CommandProcessor.COMMAND_SCOPE, CommandProcessor.COMMAND_FUNCTION));
 
-        return new ServiceTracker(context, filter, null)
+        return new ServiceTracker<Object, Object>(context, filter, null)
         {
             @Override
-            public Object addingService(ServiceReference reference)
+            public Object addingService(ServiceReference<Object> reference)
             {
                 Object scope = reference.getProperty(CommandProcessor.COMMAND_SCOPE);
                 Object function = reference.getProperty(CommandProcessor.COMMAND_FUNCTION);
                 List<Object> commands = new ArrayList<Object>();
-
-                /* */
-                if ("config".equals(scope)) {
-                    System.out.println("Added command: " + scope + ":" + function + "(" + reference.getProperty(Constants.SERVICE_ID)+
-                            "-" + reference.getProperty(".org.apache.karaf.service.guard.impl.GuardProxyCatalog.for-bundle") + ")");
-                }
-                /* */
 
                 if (scope != null && function != null)
                 {
@@ -139,7 +125,7 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
             }
 
             @Override
-            public void removedService(ServiceReference reference, Object service)
+            public void removedService(ServiceReference<Object> reference, Object service)
             {
                 Object scope = reference.getProperty(CommandProcessor.COMMAND_SCOPE);
                 Object function = reference.getProperty(CommandProcessor.COMMAND_FUNCTION);
@@ -164,39 +150,39 @@ public class MyCommandProcessorImpl extends CommandProcessorImpl {
         };
     }
 
-    private ServiceTracker trackConverters(BundleContext context) {
-        return new ServiceTracker(context, Converter.class.getName(), null)
+    private ServiceTracker<Converter, Converter> trackConverters(BundleContext context) {
+        return new ServiceTracker<Converter, Converter>(context, Converter.class.getName(), null)
         {
             @Override
-            public Object addingService(ServiceReference reference)
+            public Converter addingService(ServiceReference<Converter> reference)
             {
-                Converter converter = (Converter) super.addingService(reference);
+                Converter converter = super.addingService(reference);
                 addConverter(converter);
                 return converter;
             }
 
             @Override
-            public void removedService(ServiceReference reference, Object service)
+            public void removedService(ServiceReference<Converter> reference, Converter service)
             {
-                removeConverter((Converter) service);
+                removeConverter(service);
                 super.removedService(reference, service);
             }
         };
     }
 
-    private ServiceTracker trackListeners(BundleContext context) {
-        return new ServiceTracker(context, CommandSessionListener.class.getName(), null)
+    private ServiceTracker<CommandSessionListener, CommandSessionListener> trackListeners(BundleContext context) {
+        return new ServiceTracker<CommandSessionListener, CommandSessionListener>(context, CommandSessionListener.class.getName(), null)
         {
             @Override
-            public Object addingService(ServiceReference reference) {
-                CommandSessionListener listener = (CommandSessionListener) super.addingService(reference);
+            public CommandSessionListener addingService(ServiceReference<CommandSessionListener> reference) {
+                CommandSessionListener listener = super.addingService(reference);
                 addListener(listener);
                 return listener;
             }
 
             @Override
-            public void removedService(ServiceReference reference, Object service) {
-                removeListener((CommandSessionListener) service);
+            public void removedService(ServiceReference<CommandSessionListener> reference, CommandSessionListener service) {
+                removeListener(service);
                 super.removedService(reference, service);
             }
         };
