@@ -31,7 +31,7 @@ import org.osgi.service.cm.ConfigurationEvent;
 import org.osgi.service.cm.ConfigurationListener;
 
 public class SecuredCommandConfigTransformer implements ConfigurationListener {
-    private static final String PROXY_COMMAND_ACL_PID_PREFIX = "org.apache.karaf.command.acl.";
+    static final String PROXY_COMMAND_ACL_PID_PREFIX = "org.apache.karaf.command.acl.";
 
     private ConfigurationAdmin configAdmin;
 
