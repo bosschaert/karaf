@@ -665,10 +665,16 @@ public class GuardProxyCatalogTest {
     public void testProxyCreationThread() throws Exception {
         ProxyManager proxyManager = getProxyManager();
 
+        ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
+        EasyMock.expect(ca.listConfigurations(EasyMock.anyObject(String.class))).andReturn(null).anyTimes();
+        EasyMock.replay(ca);
+
         ServiceReference pmSref = EasyMock.createMock(ServiceReference.class);
         EasyMock.replay(pmSref);
         ServiceReference pmSref2 = EasyMock.createMock(ServiceReference.class);
         EasyMock.replay(pmSref2);
+        ServiceReference cmSref = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(cmSref);
 
         Bundle b = EasyMock.createMock(Bundle.class);
         EasyMock.expect(b.getBundleId()).andReturn(23992734L).anyTimes();
@@ -693,8 +699,11 @@ public class GuardProxyCatalogTest {
                 return null;
             }
         }).anyTimes();
+        EasyMock.expect(bc.getServiceReferences(EasyMock.anyObject(String.class),
+                EasyMock.contains(ConfigurationAdmin.class.getName()))).andReturn(new ServiceReference[] {cmSref}).anyTimes();
         EasyMock.expect(bc.getService(pmSref)).andReturn(proxyManager).anyTimes();
         EasyMock.expect(bc.getService(pmSref2)).andReturn(proxyManager).anyTimes();
+        EasyMock.expect(bc.getService(cmSref)).andReturn(ca).anyTimes();
         EasyMock.replay(bc);
 
         // This should put a ServiceListener in the pmListenerHolder, the ServiceTracker does that
@@ -930,8 +939,9 @@ public class GuardProxyCatalogTest {
         assertEquals(Boolean.TRUE, reg.getReference().getProperty(GuardProxyCatalog.PROXY_SERVICE_KEY));
     }
 
+    @SuppressWarnings("unchecked")
     public Dictionary<String, Object> testCreateProxy(Class<?> intf, Object testService) throws Exception {
-        return testCreateProxy(mockBundleContext(), intf, intf, testService);
+        return testCreateProxy(mockConfigAdminBundleContext(), intf, intf, testService);
     }
 
     public Dictionary<String, Object> testCreateProxy(BundleContext bc, Class<?> intf, Object testService) throws Exception {
@@ -1056,9 +1066,9 @@ public class GuardProxyCatalogTest {
         return proxyProps;
     }
 
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({ "unchecked", "rawtypes" })
     public Object testCreateProxy(Class<?> [] objectClasses, Object testService) throws Exception {
-        return testCreateProxy(mockBundleContext(), objectClasses, objectClasses, testService, new HashMap<ServiceReference, Object>());
+        return testCreateProxy(mockConfigAdminBundleContext(), objectClasses, objectClasses, testService, new HashMap<ServiceReference, Object>());
     }
 
     @SuppressWarnings("rawtypes")
@@ -1314,7 +1324,7 @@ public class GuardProxyCatalogTest {
         bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(cmFilter));
         EasyMock.expectLastCall().anyTimes();
         EasyMock.expect(bc.getServiceReferences(EasyMock.anyObject(String.class), EasyMock.eq(cmFilter))).
-        andReturn(new ServiceReference<?> [] {caSR}).anyTimes();
+            andReturn(new ServiceReference<?> [] {caSR}).anyTimes();
         EasyMock.expect(bc.getService(caSR)).andReturn(ca).anyTimes();
         EasyMock.replay(bc);
         return bc;

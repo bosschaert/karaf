@@ -30,7 +30,6 @@ import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.BlockingQueue;
@@ -74,7 +73,7 @@ public class GuardProxyCatalog implements ServiceListener {
     static final String SERVICE_GUARD_KEY = "service.guard";
     static final Logger log = LoggerFactory.getLogger(GuardProxyCatalog.class);
 
-    private static final Pattern JAVA_CLASS_NAME_PART_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
+    private static final Pattern JAVA_METHOD_NAME_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
     private static final String ROLE_WILDCARD = "*";
 
     private final BundleContext myBundleContext;
@@ -123,9 +122,15 @@ public class GuardProxyCatalog implements ServiceListener {
         myBundleContext.removeServiceListener(this);
 
         // Remove all proxy registrations
-        for (Iterator<Map.Entry<Long, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
-            unregisterProxy(i.next());
+        for (ServiceRegistrationHolder holder : proxyMap.values()) {
+            ServiceRegistration<?> reg = holder.registration;
+            if (reg != null) {
+                log.info("Unregistering proxy service of {} with properties {}",
+                        reg.getReference().getProperty(Constants.OBJECTCLASS), copyProperties(reg.getReference()));
+                reg.unregister();
+            }
         }
+        proxyMap.clear();
     }
 
     @Override
@@ -145,51 +150,50 @@ public class GuardProxyCatalog implements ServiceListener {
             return;
         }
 
+        Long orgServiceID = (Long) sr.getProperty(Constants.SERVICE_ID);
         if (event.getType() == ServiceEvent.UNREGISTERING) {
-            handleOriginalServiceUnregistering((Long) sr.getProperty(Constants.SERVICE_ID));
+            handleOriginalServiceUnregistering(orgServiceID);
         }
 
         if ((event.getType() & (ServiceEvent.MODIFIED | ServiceEvent.MODIFIED_ENDMATCH)) > 0) {
-            handleOriginalServiceModifed(sr);
+            handleOriginalServiceModifed(orgServiceID, sr);
         }
     }
 
-    private void handleOriginalServiceUnregistering(long orgServiceID) {
+    private void handleOriginalServiceUnregistering(Long orgServiceID) {
+        // If the service queued up to be proxied, remove it.
         for (Iterator<CreateProxyRunnable> i = createProxyQueue.iterator(); i.hasNext(); ) {
             CreateProxyRunnable cpr = i.next();
-            if (cpr.getOriginalServiceID() == orgServiceID) {
+            if (orgServiceID.equals(cpr.getOriginalServiceID())) {
                 i.remove();
             }
         }
 
-        for (Iterator<Map.Entry<Long, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
-            Map.Entry<Long, ServiceRegistrationHolder> entry = i.next();
-            if (entry.getKey().equals(orgServiceID)) {
-                i.remove();
-                unregisterProxy(entry);
+        ServiceRegistrationHolder holder = proxyMap.remove(orgServiceID);
+        if (holder != null) {
+            if (holder.registration != null) {
+                holder.registration.unregister();
             }
         }
     }
 
-    private void handleOriginalServiceModifed(ServiceReference<?> orgServiceRef) {
+    private void handleOriginalServiceModifed(Long orgServiceID, ServiceReference<?> orgServiceRef) {
         // We don't need to do anything for services that are queued up to be proxied, as the
         // properties are only taken at the point of proxyfication...
 
-        for (Iterator<Map.Entry<Long, ServiceRegistrationHolder>> i = proxyMap.entrySet().iterator(); i.hasNext(); ) {
-            Map.Entry<Long, ServiceRegistrationHolder> entry = i.next();
-            if (orgServiceRef.getProperty(Constants.SERVICE_ID).equals(entry.getKey())) {
-                ServiceRegistration<?> reg = entry.getValue().registration;
-                if (reg != null) {
-                    // Preserve the roles as they are expensive to compute
-                    Object roles = reg.getReference().getProperty(SERVICE_GUARD_ROLES_PROPERTY);
-                    Dictionary<String, Object> newProxyProps = proxyProperties(orgServiceRef);
-                    if (roles != null) {
-                        newProxyProps.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
-                    } else {
-                        newProxyProps.remove(SERVICE_GUARD_ROLES_PROPERTY); // TODO write unit test for this
-                    }
-                    reg.setProperties(newProxyProps);
+        ServiceRegistrationHolder holder = proxyMap.get(orgServiceID);
+        if (holder != null) {
+            ServiceRegistration<?> reg = holder.registration;
+            if (reg != null) {
+                // Preserve the roles as they are expensive to compute
+                Object roles = reg.getReference().getProperty(SERVICE_GUARD_ROLES_PROPERTY);
+                Dictionary<String, Object> newProxyProps = proxyProperties(orgServiceRef);
+                if (roles != null) {
+                    newProxyProps.put(SERVICE_GUARD_ROLES_PROPERTY, roles);
+                } else {
+                    newProxyProps.remove(SERVICE_GUARD_ROLES_PROPERTY); // TODO test!
                 }
+                reg.setProperties(newProxyProps);
             }
         }
     }
@@ -225,17 +229,15 @@ public class GuardProxyCatalog implements ServiceListener {
         final ServiceRegistrationHolder registrationHolder = new ServiceRegistrationHolder();
         ServiceRegistrationHolder previousHolder = proxyMap.putIfAbsent(orgServiceID, registrationHolder);
         if (previousHolder != null) {
-            // There is already a proxy for this service for this client bundle.
+            // There is already a proxy for this service
             return;
         }
 
         log.trace("Will create proxy of service {}({})", originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID);
 
         // Instead of immediately creating the proxy, we add the code that creates the proxy to the proxyQueue.
-        // This has 2 advantages:
-        //  1. creating a proxy, can be processor intensive which benefits from asynchronous execution
-        //  2. it also means that we can better react to the fact that the ProxyManager service might arrive
-        //     later. As soon as the Proxy Manager is available, the queue is emptied and the proxies created.
+        // This means that we can better react to the fact that the ProxyManager service might arrive
+        // later. As soon as the Proxy Manager is available, the queue is emptied and the proxies created.
         CreateProxyRunnable cpr = new CreateProxyRunnable() {
             @Override
             public long getOriginalServiceID() {
@@ -244,61 +246,14 @@ public class GuardProxyCatalog implements ServiceListener {
 
             @Override
             public void run(final ProxyManager pm) throws Exception {
-                ServiceFactory<Object> sf = new ServiceFactory<Object>() {
-                    @Override
-                    public Object getService(Bundle bundle, ServiceRegistration<Object> registration) {
-                        Set<Class<?>> allClasses = new HashSet<Class<?>>();
-
-                        Object svc = bundle.getBundleContext().getService(originalRef);
-                        Class<?> curClass = svc.getClass();
-                        while (!Object.class.equals(curClass)) {
-                            allClasses.add(curClass);
-                            allClasses.addAll(Arrays.asList(curClass.getInterfaces()));
-                            curClass = curClass.getSuperclass(); // Collect super types too
-                        }
-
-                        for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
-                            Class<?> cls = i.next();
-                            if (((cls.getModifiers() & (Modifier.PUBLIC | Modifier.PROTECTED)) == 0) ||
-                                ((cls.getModifiers() & Modifier.FINAL) > 0) ||
-                                cls.isAnonymousClass()  || cls.isLocalClass()) {
-                                // Do not attempt to proxy private, package-default, final,  anonymous or local classes
-                                i.remove();
-                            } else {
-                                for (Method m : cls.getDeclaredMethods()) {
-                                    if ((m.getModifiers() & Modifier.FINAL) > 0) {
-                                        i.remove();
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        // This needs to be done on the Client BundleContext since the bundle might be backed by a Service Factory
-                        // in which case it needs to be given a chance to produce the right service for this client.
-                        InvocationListener il = new ProxyInvocationListener(originalRef);
-                        try {
-                            return pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
-                        } catch (UnableToProxyException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }
-
-                    @Override
-                    public void ungetService(Bundle bundle, ServiceRegistration<Object> registration, Object service) {
-                        bundle.getBundleContext().ungetService(originalRef);
-                    }
-                };
                 String[] objectClassProperty = (String[]) originalRef.getProperty(Constants.OBJECTCLASS);
-                ServiceRegistration<?> proxyReg = originalRef.getBundle().getBundleContext().registerService(
+                ServiceFactory<Object> sf = new ProxyServiceFactory(pm, originalRef);
+                registrationHolder.registration = originalRef.getBundle().getBundleContext().registerService(
                         objectClassProperty, sf, proxyPropertiesRoles());
 
-                Dictionary<String, Object> actualProxyProps = copyProperties(proxyReg.getReference());
+                Dictionary<String, Object> actualProxyProps = copyProperties(registrationHolder.registration.getReference());
                 log.info("Created proxy of service {} under {} with properties {}",
                         orgServiceID, actualProxyProps.get(Constants.OBJECTCLASS), actualProxyProps);
-
-                // put the actual service registration in the holder
-                registrationHolder.registration = proxyReg;
             }
 
             private Dictionary<String, Object> proxyPropertiesRoles() throws Exception {
@@ -325,15 +280,6 @@ public class GuardProxyCatalog implements ServiceListener {
         }
     }
 
-    private static void unregisterProxy(Map.Entry<Long, ServiceRegistrationHolder> entry) {
-        ServiceRegistration<?> reg = entry.getValue().registration;
-        if (reg != null) {
-            log.info("Unregistering proxy service of {} with properties {}",
-                    reg.getReference().getProperty(Constants.OBJECTCLASS), copyProperties(reg.getReference()));
-            reg.unregister();
-        }
-    }
-
     private static Dictionary<String, Object> proxyProperties(ServiceReference<?> sr) {
         Dictionary<String, Object> p = copyProperties(sr);
         p.put(PROXY_SERVICE_KEY, Boolean.TRUE);
@@ -350,8 +296,8 @@ public class GuardProxyCatalog implements ServiceListener {
     }
 
     // Returns what roles can possibly ever invoke this service. Note that not every invocation may be successful
-    // as there can be different roles for different methos and also roles based on arguments passed in.
-    private Set<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
+    // as there can be different roles for different methods and also roles based on arguments passed in.
+    Set<String> getServiceInvocationRoles(ServiceReference<?> serviceReference) throws Exception {
         boolean definitionFound = false;
         Set<String> allRoles = new HashSet<String>();
 
@@ -390,9 +336,13 @@ public class GuardProxyCatalog implements ServiceListener {
 
     // Ensures that it never returns null
     private Configuration[] getServiceGuardConfigs() throws IOException, InvalidSyntaxException {
-        ConfigurationAdmin ca = configAdminTracker.getService();
+        ConfigurationAdmin ca = null;
+        try {
+            ca = configAdminTracker.waitForService(5000);
+        } catch (InterruptedException e) {
+        }
         if (ca == null) {
-            return new Configuration [] {};
+            throw new IllegalStateException("Role based access for services requires the OSGi Configuration Admin Service to be present");
         }
 
         Configuration[] configs = ca.listConfigurations(
@@ -404,7 +354,7 @@ public class GuardProxyCatalog implements ServiceListener {
     }
 
     private boolean isValidMethodName(String name) {
-        return JAVA_CLASS_NAME_PART_PATTERN.matcher(name).matches();
+        return JAVA_METHOD_NAME_PATTERN.matcher(name).matches();
     }
 
     void stopProxyCreator() {
@@ -414,24 +364,108 @@ public class GuardProxyCatalog implements ServiceListener {
         }
     }
 
+    static boolean currentUserHasRole(String reqRole) {
+        if (ROLE_WILDCARD.equals(reqRole)) {
+            return true;
+        }
+
+        String clazz;
+        String role;
+        int idx = reqRole.indexOf(':');
+        if (idx > 0) {
+            clazz = reqRole.substring(0, idx);
+            role = reqRole.substring(idx + 1);
+        } else {
+            clazz = RolePrincipal.class.getName();
+            role = reqRole;
+        }
+
+        AccessControlContext acc = AccessController.getContext();
+        if (acc == null) {
+            return false;
+        }
+
+        Subject subject = Subject.getSubject(acc);
+        if (subject == null) {
+            return false;
+        }
+
+        for (Principal p : subject.getPrincipals()) {
+            if (clazz.equals(p.getClass().getName()) && role.equals(p.getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static class ServiceRegistrationHolder {
         volatile ServiceRegistration<?> registration;
     }
 
-    private class ProxyInvocationListener implements InvocationListener {
+    class ProxyServiceFactory implements ServiceFactory<Object> {
+        private final ProxyManager pm;
+        private final ServiceReference<?> originalRef;
+
+        ProxyServiceFactory(ProxyManager pm, ServiceReference<?> originalRef) {
+            this.pm = pm;
+            this.originalRef = originalRef;
+        }
+
+        @Override
+        public Object getService(Bundle bundle, ServiceRegistration<Object> registration) {
+            Set<Class<?>> allClasses = new HashSet<Class<?>>();
+
+            // This needs to be done on the Client BundleContext since the bundle might be backed by a Service Factory
+            // in which case it needs to be given a chance to produce the right service for this client.
+            Object svc = bundle.getBundleContext().getService(originalRef);
+            Class<?> curClass = svc.getClass();
+            while (!Object.class.equals(curClass)) {
+                allClasses.add(curClass);
+                allClasses.addAll(Arrays.asList(curClass.getInterfaces()));
+                curClass = curClass.getSuperclass(); // Collect super types too
+            }
+
+            for (Iterator<Class<?>> i = allClasses.iterator(); i.hasNext(); ) {
+                Class<?> cls = i.next();
+                if (((cls.getModifiers() & (Modifier.PUBLIC | Modifier.PROTECTED)) == 0) ||
+                    ((cls.getModifiers() & Modifier.FINAL) > 0) ||
+                    cls.isAnonymousClass()  || cls.isLocalClass()) {
+                    // Do not attempt to proxy private, package-default, final,  anonymous or local classes
+                    i.remove();
+                } else {
+                    for (Method m : cls.getDeclaredMethods()) {
+                        if ((m.getModifiers() & Modifier.FINAL) > 0) {
+                            // If the class contains final methods, don't attempt to proxy it
+                            i.remove();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            InvocationListener il = new ProxyInvocationListener(originalRef);
+            try {
+                return pm.createInterceptingProxy(originalRef.getBundle(), allClasses, svc, il);
+            } catch (UnableToProxyException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        @Override
+        public void ungetService(Bundle bundle, ServiceRegistration<Object> registration, Object service) {
+            bundle.getBundleContext().ungetService(originalRef); // TODO test!
+        }
+    }
+
+    class ProxyInvocationListener implements InvocationListener {
         private final ServiceReference<?> serviceReference;
 
-        public ProxyInvocationListener(ServiceReference<?> sr) {
+        ProxyInvocationListener(ServiceReference<?> sr) {
             this.serviceReference = sr;
         }
 
         @Override
         public Object preInvoke(Object proxy, Method m, Object[] args) throws Throwable {
-            Configuration[] configs = getServiceGuardConfigs();
-            if (configs.length == 0) {
-                return null;
-            }
-
             String[] sig = new String[m.getParameterTypes().length];
             for (int i = 0; i < m.getParameterTypes().length; i++) {
                 sig[i] = m.getParameterTypes()[i].getName();
@@ -443,7 +477,7 @@ public class GuardProxyCatalog implements ServiceListener {
 
             // This can probably be optimized. Maybe we can cache the config object relevant instead of
             // walking through all of the ones that have 'service.guard'.
-            for (Configuration config : configs) {
+            for (Configuration config : getServiceGuardConfigs()) {
                 Object guardFilter = config.getProperties().get(SERVICE_GUARD_KEY);
                 if (guardFilter instanceof String) {
                     Filter filter = myBundleContext.createFilter((String) guardFilter);
@@ -473,10 +507,12 @@ public class GuardProxyCatalog implements ServiceListener {
                 throw new SecurityException("Insufficient credentials.");
             }
 
+            // The first entry on the map has the highest significance because the keys are sorted in the order of
+            // the Specificity enum.
             List<String> allowedRoles = roleMappings.values().iterator().next();
             for (String role : allowedRoles) {
                 if (currentUserHasRole(role)) {
-                    log.trace("Allowed user with role {} to invoke service {} method {}", role, serviceReference, m);
+                    log.trace("Allow user with role {} to invoke service {} method {}", role, serviceReference, m);
                     return null;
                 }
             }
@@ -497,40 +533,7 @@ public class GuardProxyCatalog implements ServiceListener {
         }
     }
 
-    static boolean currentUserHasRole(String reqRole) {
-        if (ROLE_WILDCARD.equals(reqRole)) {
-            return true;
-        }
-
-        String clazz;
-        String role;
-        int idx = reqRole.indexOf(':');
-        if (idx > 0) {
-            clazz = reqRole.substring(0, idx);
-            role = reqRole.substring(idx + 1);
-        } else {
-            clazz = RolePrincipal.class.getName();
-            role = reqRole;
-        }
-
-        AccessControlContext acc = AccessController.getContext();
-        if (acc == null) {
-            return false;
-        }
-        Subject subject = Subject.getSubject(acc);
-
-        if (subject == null) {
-            return false;
-        }
-
-        for (Principal p : subject.getPrincipals()) {
-            if (clazz.equals(p.getClass().getName()) && role.equals(p.getName())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
+    // This customizer comes into action as the ProxyManager service arrives.
     class ServiceProxyCreatorCustomizer implements ServiceTrackerCustomizer<ProxyManager, ProxyManager> {
         @Override
         public ProxyManager addingService(ServiceReference<ProxyManager> reference) {
@@ -549,7 +552,7 @@ public class GuardProxyCatalog implements ServiceListener {
                     while (runProxyCreator) {
                         CreateProxyRunnable proxyCreator = null;
                         try {
-                            proxyCreator = createProxyQueue.take();
+                            proxyCreator = createProxyQueue.take(); // take waits until there is something on the queue
                         } catch (InterruptedException ie) {
                             // part of normal behaviour
                         }

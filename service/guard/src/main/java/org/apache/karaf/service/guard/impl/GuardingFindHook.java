@@ -34,14 +34,9 @@ import org.osgi.framework.hooks.service.FindHook;
 import org.osgi.util.tracker.ServiceTracker;
 
 class GuardingFindHook implements FindHook, BundleListener {
-    // This regexp is used to convert filters that say something about the roles that can invoke a service
-    // into a filter that doesn't have this condition. This is used to create secured/proxied versions if
+    // These regexps are used to convert filters that say something about the roles that can invoke a service
+    // into a filter that doesn't have this condition. This is used to create proxied versions if
     // those services arrive after the initial find operation is done.
-    // The filter actually matches filters like this (and is flexible wrt spaces):
-    //   (org.apache.karaf.service.guard.roles=myrole)
-    // or
-    //   !(org.apache.karaf.service.guard.roles=myotherrole)
-    // It is then later used to turn this condition off, so that services that match the base conditions are found.
     private static final Pattern GUARD_ROLES_CONDITION_PATTERN =
             Pattern.compile("[!]?\\s*\\(\\s*" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "\\s*[=]\\s*[a-zA-Z0-9*]+\\s*\\)");
     private static final Pattern EMTPY_BRACES_PATTRN = Pattern.compile("\\(\\s*[@]\\s*\\)");
@@ -97,10 +92,12 @@ class GuardingFindHook implements FindHook, BundleListener {
         }
     }
 
-    // Find was called for a service based on the roles property that is added by GuardProxyCatalog proxy mechanism
-    // However, a backing/real service that matches the properties other than the roles might arrive later. We want
-    // to ensure that the proxyfied service is registered when it does.
-    // This method kicks off a process that adds a ServiceTracker that gets notified if such a service ever arrives.
+    /** Find was called for a service based on the roles property that is added by GuardProxyCatalog proxy mechanism.
+     * However, a backing/real service that matches the properties other than the roles might arrive later. We want
+     * to ensure that the proxyfied service with the {@link GuardProxyCatalog#SERVICE_GUARD_ROLES_PROPERTY} property
+     * is registered at that stage.
+     * This method kicks off a process that adds a ServiceTracker that gets notified if such a service ever arrives.
+     */
     private void addNonRoleServiceTracker(final BundleContext context, final String filter) {
         // Replace the condition on the roles with a condition on services that are not proxied
         String nonRoleFilter = GUARD_ROLES_CONDITION_PATTERN.matcher(filter).replaceAll("@");
@@ -126,6 +123,7 @@ class GuardingFindHook implements FindHook, BundleListener {
             }
         }
 
+        // Do the following outside of synchronization
         if (newTracker) {
             // Important to pass true as we are tracking for other bundles.
             mst.open(true);
@@ -153,8 +151,10 @@ class GuardingFindHook implements FindHook, BundleListener {
         }
     }
 
-    // This Service Tracker tracks services and once it finds any matches will create proxies for all clients that need it proxied.
-    // It can be useful if the client looks for the roles property which is specified on the proxy but not on the original service.
+    /** This Service Tracker tracks services for clients that perform service lookups based on the
+     * {@link GuardProxyCatalog#SERVICE_GUARD_ROLES_PROPERTY} property. The tracker does the lookup without this property and once it
+     * finds any matches it will cause a proxy which has the roles property to be created.
+     */
     class MultiplexingServiceTracker extends ServiceTracker<Object, Object> {
         List<BundleContext> clientBCs = new CopyOnWriteArrayList<BundleContext>();
 
@@ -185,7 +185,7 @@ class GuardingFindHook implements FindHook, BundleListener {
         public Object addingService(ServiceReference<Object> reference) {
             // So there is a new service that matches the filter.
             // We now need to make sure that there is a matching proxy for it too
-            // to that all the interested clients can see it...
+            // to that the interested clients can see it...
             if (servicesFilter.match(reference)) {
                 guardProxyCatalog.handleProxificationForHook(reference);
             }
