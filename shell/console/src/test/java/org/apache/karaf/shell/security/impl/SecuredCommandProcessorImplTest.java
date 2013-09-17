@@ -20,11 +20,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.security.PrivilegedAction;
+import java.util.HashMap;
 import java.util.Map;
 
 import javax.security.auth.Subject;
 
 import org.apache.felix.gogo.api.CommandSessionListener;
+import org.apache.felix.service.command.CommandProcessor;
 import org.apache.felix.service.command.Converter;
 import org.apache.felix.service.threadio.ThreadIO;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
@@ -35,6 +37,7 @@ import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
 import org.osgi.framework.InvalidSyntaxException;
+import org.osgi.framework.ServiceEvent;
 import org.osgi.framework.ServiceListener;
 import org.osgi.framework.ServiceReference;
 
@@ -58,12 +61,16 @@ public class SecuredCommandProcessorImplTest {
             }
         }).anyTimes();
         EasyMock.expect(bc.getServiceReferences((String) EasyMock.anyObject(), (String) EasyMock.anyObject())).andReturn(null).anyTimes();
+
+        // Capture the listeners
+        final Map<String, ServiceListener> listeners = new HashMap<String, ServiceListener>();
+
         // Here are the expected calls
-        expectServiceTracker(bc,
-                "(&(osgi.command.scope=*)(osgi.command.function=*)" +
-                "(|(org.apache.karaf.service.guard.roles=aaabbbccc)(!(org.apache.karaf.service.guard.roles=*))))");
-        expectServiceTracker(bc, "(objectClass=" + Converter.class.getName() + ")");
-        expectServiceTracker(bc, "(objectClass=" + CommandSessionListener.class.getName() + ")");
+        final String commandFilter = "(&(osgi.command.scope=*)(osgi.command.function=*)" +
+                "(|(org.apache.karaf.service.guard.roles=aaabbbccc)(!(org.apache.karaf.service.guard.roles=*))))";
+        expectServiceTracker(bc, commandFilter, listeners);
+        expectServiceTracker(bc, "(objectClass=" + Converter.class.getName() + ")", listeners);
+        expectServiceTracker(bc, "(objectClass=" + CommandSessionListener.class.getName() + ")", listeners);
         EasyMock.replay(bc);
 
         Subject subject = new Subject();
@@ -80,15 +87,46 @@ public class SecuredCommandProcessorImplTest {
                 assertTrue(scp.getCommands().contains("osgi:eval"));
                 assertEquals(1, scp.getConstants().size());
                 assertEquals(bc, scp.getConstants().get(".context"));
+
+                // Now let's make a command appear...
+                ServiceListener commandListener = listeners.get(commandFilter);
+
+                ServiceReference<?> cdRef = EasyMock.createMock(ServiceReference.class);
+                EasyMock.expect(cdRef.getProperty(CommandProcessor.COMMAND_SCOPE)).andReturn("foo");
+                EasyMock.expect(cdRef.getProperty(CommandProcessor.COMMAND_FUNCTION)).andReturn("bar");
+                EasyMock.replay(cdRef);
+
+                ServiceEvent event = new ServiceEvent(ServiceEvent.REGISTERED, cdRef);
+                commandListener.serviceChanged(event);
+                assertEquals(4, scp.getCommands().size());
+                assertTrue(scp.getCommands().contains("foo:bar"));
+
+                ServiceReference<?> cd2Ref = EasyMock.createMock(ServiceReference.class);
+                EasyMock.expect(cd2Ref.getProperty(CommandProcessor.COMMAND_SCOPE)).andReturn("xxx");
+                EasyMock.expect(cd2Ref.getProperty(CommandProcessor.COMMAND_FUNCTION)).andReturn(
+                        new String[] {"aaa", "bbb"});
+                EasyMock.replay(cd2Ref);
+
+                ServiceEvent event2 = new ServiceEvent(ServiceEvent.REGISTERED, cd2Ref);
+                commandListener.serviceChanged(event2);
+                assertEquals(6, scp.getCommands().size());
+                assertTrue(scp.getCommands().contains("xxx:aaa"));
+                assertTrue(scp.getCommands().contains("xxx:bbb"));
+
                 return null;
             }
         });
     }
 
-    void expectServiceTracker(final BundleContext bc, String expectedFilter) throws InvalidSyntaxException {
+    void expectServiceTracker(final BundleContext bc, final String expectedFilter, final Map<String, ServiceListener> listeners) throws InvalidSyntaxException {
         bc.addServiceListener(EasyMock.isA(ServiceListener.class), EasyMock.eq(expectedFilter));
-        EasyMock.expectLastCall().once();
-        // not checking this one...
+        EasyMock.expectLastCall().andAnswer(new IAnswer<Object>() {
+            @Override
+            public Object answer() throws Throwable {
+                listeners.put(expectedFilter, (ServiceListener) EasyMock.getCurrentArguments()[0]);
+                return null;
+            }
+        }).once();
     }
 
     // Subclass to provide access to some protected members
