@@ -44,9 +44,7 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
         if (configs == null)
             return;
 
-        System.out.println("@@@ Initial Config Set:");
         for (Configuration config : configs) {
-            System.out.println("  " + config.getPid());
             generateServiceGuardConfig(config);
         }
     }

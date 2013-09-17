@@ -28,6 +28,7 @@ import java.util.Map;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
 import org.junit.Test;
+import org.osgi.framework.Constants;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 
@@ -39,19 +40,20 @@ public class SecuredCommandConfigTransformerTest {
         props.put("bar[/.*[a]+*/]", "d");
         props.put("bar", "e");
         props.put("zar[/.*HiThere*/]", "f");
+        props.put("service.pid", SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "abc");
+        Configuration commandConfig = mockConfiguration(props);
 
-        Configuration commandConfig = EasyMock.createMock(Configuration.class);
-        EasyMock.expect(commandConfig.getPid()).
-            andReturn(SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "abc").anyTimes();
-        EasyMock.expect(commandConfig.getProperties()).andReturn(props).anyTimes();
-        EasyMock.replay(commandConfig);
+        Dictionary<String, Object> props2 = new Hashtable<String, Object>();
+        props2.put("xxx", "yyy");
+        props2.put("service.pid", SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "xyz.123");
+        Configuration commandConfig2 = mockConfiguration(props2);
 
         final Map<String, Configuration> configurations = new HashMap<String, Configuration>();
 
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
         EasyMock.expect(ca.listConfigurations(
                 "(service.pid=" + SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "*)")).
-                andReturn(new Configuration [] {commandConfig}).anyTimes();
+                andReturn(new Configuration [] {commandConfig, commandConfig2}).anyTimes();
         EasyMock.expect(ca.getConfiguration(EasyMock.isA(String.class))).andAnswer(new IAnswer<Configuration>() {
             @Override
             public Configuration answer() throws Throwable {
@@ -60,15 +62,28 @@ public class SecuredCommandConfigTransformerTest {
                 if (c == null) {
                     c = EasyMock.createMock(Configuration.class);
 
-                    // Put some expectations in the mock
+                    // Put some expectations in the various mocks
+                    Dictionary<String, Object> m = new Hashtable<String, Object>();
                     if ("org.apache.karaf.service.acl.command.abc.foo".equals(pid)) {
-                        Dictionary<String, Object> m = new Hashtable<String, Object>();
-                        c.update(m);
-                        EasyMock.expectLastCall().once();
+                        m.put("service.guard", "(&(osgi.command.scope=abc)(osgi.command.function=foo))");
+                        m.put("execute", "a,b,c");
+                        m.put("foo", "a,b,c");
+                    } else if ("org.apache.karaf.service.acl.command.abc.bar".equals(pid)) {
+                        m.put("service.guard", "(&(osgi.command.scope=abc)(osgi.command.function=bar))");
+                        m.put("execute[/.*/,/.*[a]+*/]", "d");
+                        m.put("execute", "e");
+                        m.put("bar[/.*[a]+*/]", "d");
+                        m.put("bar", "e");
+                    } else if ("org.apache.karaf.service.acl.command.abc.zar".equals(pid)) {
+                        m.put("service.guard", "(&(osgi.command.scope=abc)(osgi.command.function=zar))");
+                        m.put("execute[/.*/,/.*HiThere*/]", "f");
+                        m.put("zar[/.*HiThere*/]", "f");
                     } else {
                         fail("Unexpected PID: " + pid);
                     }
-
+                    m.put("*", "*");
+                    c.update(m);
+                    EasyMock.expectLastCall().once();
 
                     EasyMock.replay(c);
                     configurations.put(pid, c);
@@ -92,6 +107,10 @@ public class SecuredCommandConfigTransformerTest {
             EasyMock.verify(c);
             if ("org.apache.karaf.service.acl.command.abc.foo".equals(entry.getKey())) {
                 foundFoo = true;
+            } else if ("org.apache.karaf.service.acl.command.abc.bar".equals(entry.getKey())) {
+                foundBar = true;
+            } else if ("org.apache.karaf.service.acl.command.abc.zar".equals(entry.getKey())) {
+                foundZar = true;
             }
         }
 
@@ -99,5 +118,14 @@ public class SecuredCommandConfigTransformerTest {
         assertTrue(foundBar);
         assertTrue(foundZar);
 
+    }
+
+    Configuration mockConfiguration(Dictionary<String, Object> props) {
+        Configuration commandConfig = EasyMock.createMock(Configuration.class);
+        EasyMock.expect(commandConfig.getPid()).
+            andReturn((String) props.get(Constants.SERVICE_PID)).anyTimes();
+        EasyMock.expect(commandConfig.getProperties()).andReturn(props).anyTimes();
+        EasyMock.replay(commandConfig);
+        return commandConfig;
     }
 }
