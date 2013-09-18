@@ -71,7 +71,7 @@ public class GuardProxyCatalog implements ServiceListener {
     static final String PROXY_SERVICE_KEY = "." + GuardProxyCatalog.class.getName(); // The only currently used value is Boolean.TRUE
     static final String SERVICE_ACL_PREFIX = "org.apache.karaf.service.acl.";
     static final String SERVICE_GUARD_KEY = "service.guard";
-    static final Logger log = LoggerFactory.getLogger(GuardProxyCatalog.class);
+    static final Logger LOG = LoggerFactory.getLogger(GuardProxyCatalog.class);
 
     private static final Pattern JAVA_METHOD_NAME_PATTERN = Pattern.compile("[a-zA-Z_$][a-zA-Z0-9_$]*");
     private static final String ROLE_WILDCARD = "*";
@@ -89,19 +89,19 @@ public class GuardProxyCatalog implements ServiceListener {
     volatile Thread proxyCreatorThread = null;
 
     GuardProxyCatalog(BundleContext bc) throws Exception {
-        log.trace("Starting GuardProxyCatalog");
+        LOG.trace("Starting GuardProxyCatalog");
         myBundleContext = bc;
 
         // The service listener is used to update/unregister proxies if the backing service changes/goes away
         bc.addServiceListener(this);
 
         Filter caFilter = getNonProxyFilter(bc, ConfigurationAdmin.class);
-        log.trace("Creating Config Admin Tracker using filter {}", caFilter);
+        LOG.trace("Creating Config Admin Tracker using filter {}", caFilter);
         configAdminTracker = new ServiceTracker<ConfigurationAdmin, ConfigurationAdmin>(bc, caFilter, null);
         configAdminTracker.open();
 
         Filter pmFilter = getNonProxyFilter(bc, ProxyManager.class);
-        log.trace("Creating Proxy Manager Tracker using filter {}", pmFilter);
+        LOG.trace("Creating Proxy Manager Tracker using filter {}", pmFilter);
         proxyManagerTracker = new ServiceTracker<ProxyManager, ProxyManager>(bc, pmFilter, new ServiceProxyCreatorCustomizer());
         proxyManagerTracker.open();
     }
@@ -114,7 +114,7 @@ public class GuardProxyCatalog implements ServiceListener {
     }
 
     void close() {
-        log.trace("Stopping GuardProxyCatalog");
+        LOG.trace("Stopping GuardProxyCatalog");
         stopProxyCreator();
         proxyManagerTracker.close();
         configAdminTracker.close();
@@ -125,7 +125,7 @@ public class GuardProxyCatalog implements ServiceListener {
         for (ServiceRegistrationHolder holder : proxyMap.values()) {
             ServiceRegistration<?> reg = holder.registration;
             if (reg != null) {
-                log.info("Unregistering proxy service of {} with properties {}",
+                LOG.info("Unregistering proxy service of {} with properties {}",
                         reg.getReference().getProperty(Constants.OBJECTCLASS), copyProperties(reg.getReference()));
                 reg.unregister();
             }
@@ -233,7 +233,7 @@ public class GuardProxyCatalog implements ServiceListener {
             return;
         }
 
-        log.trace("Will create proxy of service {}({})", originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID);
+        LOG.trace("Will create proxy of service {}({})", originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID);
 
         // Instead of immediately creating the proxy, we add the code that creates the proxy to the proxyQueue.
         // This means that we can better react to the fact that the ProxyManager service might arrive
@@ -252,7 +252,7 @@ public class GuardProxyCatalog implements ServiceListener {
                         objectClassProperty, sf, proxyPropertiesRoles());
 
                 Dictionary<String, Object> actualProxyProps = copyProperties(registrationHolder.registration.getReference());
-                log.info("Created proxy of service {} under {} with properties {}",
+                LOG.info("Created proxy of service {} under {} with properties {}",
                         orgServiceID, actualProxyProps.get(Constants.OBJECTCLASS), actualProxyProps);
             }
 
@@ -274,7 +274,7 @@ public class GuardProxyCatalog implements ServiceListener {
         try {
             createProxyQueue.put(cpr);
         } catch (InterruptedException e) {
-            log.warn("Problem scheduling a proxy creator for service {}({})",
+            LOG.warn("Problem scheduling a proxy creator for service {}({})",
                     originalRef.getProperty(Constants.OBJECTCLASS), orgServiceID, e);
             e.printStackTrace();
         }
@@ -503,7 +503,7 @@ public class GuardProxyCatalog implements ServiceListener {
             }
 
             if (roleMappings.size() == 0) {
-                log.info("Service {} has role mapping, but assigned no roles to method {}", serviceReference, m);
+                LOG.info("Service {} has role mapping, but assigned no roles to method {}", serviceReference, m);
                 throw new SecurityException("Insufficient credentials.");
             }
 
@@ -512,13 +512,13 @@ public class GuardProxyCatalog implements ServiceListener {
             List<String> allowedRoles = roleMappings.values().iterator().next();
             for (String role : allowedRoles) {
                 if (currentUserHasRole(role)) {
-                    log.trace("Allow user with role {} to invoke service {} method {}", role, serviceReference, m);
+                    LOG.trace("Allow user with role {} to invoke service {} method {}", role, serviceReference, m);
                     return null;
                 }
             }
 
             // The current user does not have the required roles to invoke the service.
-            log.info("Current user does not have required roles ({}) for service {} method {} and/or arguments",
+            LOG.info("Current user does not have required roles ({}) for service {} method {} and/or arguments",
                     allowedRoles, serviceReference, m);
             throw new SecurityException("Insufficient credentials.");
         }
@@ -561,7 +561,7 @@ public class GuardProxyCatalog implements ServiceListener {
                             try {
                                 proxyCreator.run(proxyManager);
                             } catch (Exception e) {
-                                log.warn("Problem creating secured service proxy", e);
+                                LOG.warn("Problem creating secured service proxy", e);
                             }
                         }
                     }

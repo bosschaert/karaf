@@ -25,13 +25,21 @@ import java.util.Map;
 
 import org.apache.felix.service.command.CommandProcessor;
 import org.osgi.framework.Constants;
+import org.osgi.framework.InvalidSyntaxException;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
 import org.osgi.service.cm.ConfigurationEvent;
 import org.osgi.service.cm.ConfigurationListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SecuredCommandConfigTransformer implements ConfigurationListener {
     static final String PROXY_COMMAND_ACL_PID_PREFIX = "org.apache.karaf.command.acl.";
+    static final String PROXY_SERVICE_ACL_PID_PREFIX = "org.apache.karaf.service.acl.command.";
+
+    private static final Logger LOG = LoggerFactory.getLogger(SecuredCommandConfigTransformer.class);
+    private static final String CONFIGURATION_FILTER =
+            "(" + Constants.SERVICE_PID  + "=" + PROXY_COMMAND_ACL_PID_PREFIX + "*)";
 
     private ConfigurationAdmin configAdmin;
 
@@ -40,7 +48,7 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
     }
 
     public void init() throws Exception {
-        Configuration[] configs = configAdmin.listConfigurations("(" + Constants.SERVICE_PID  + "=" + PROXY_COMMAND_ACL_PID_PREFIX + "*)");
+        Configuration[] configs = configAdmin.listConfigurations(CONFIGURATION_FILTER);
         if (configs == null)
             return;
 
@@ -78,7 +86,7 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
             }
             bareCommand = bareCommand.trim();
 
-            String pid = "org.apache.karaf.service.acl.command." + scopeName + "." + bareCommand;
+            String pid = PROXY_SERVICE_ACL_PID_PREFIX + scopeName + "." + bareCommand;
             Dictionary<String, Object> map;
             if (!configMaps.containsKey(pid)) {
                 map = new Hashtable<String, Object>();
@@ -118,9 +126,40 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
         return sb.toString();
     }
 
+    private void deleteServiceGuardConfig(String scope) throws IOException, InvalidSyntaxException {
+        if (scope.startsWith("."))
+            scope = scope.substring(1);
+
+        if (scope.contains("."))
+            // This is not a command scope as that should be a single word without any further dots
+            return;
+
+        // Delete all the generated configurations for this scope
+        Configuration[] configs = configAdmin.listConfigurations("(service.pid=" + PROXY_SERVICE_ACL_PID_PREFIX + "." + scope + ".*)");
+        if (configs == null)
+            return;
+
+        for (Configuration config : configs) {
+            config.delete();
+        }
+    }
+
     @Override
     public void configurationEvent(ConfigurationEvent event) {
-        System.out.println("### Received Configuration Event: " + event.getPid());
-        // TODO update generated configuration
+        if (!event.getPid().startsWith(PROXY_COMMAND_ACL_PID_PREFIX))
+            return;
+
+        try {
+            switch (event.getType()) {
+            case ConfigurationEvent.CM_DELETED:
+                deleteServiceGuardConfig(event.getPid().substring(PROXY_COMMAND_ACL_PID_PREFIX.length()));
+                break;
+            case ConfigurationEvent.CM_UPDATED:
+                generateServiceGuardConfig(configAdmin.getConfiguration(event.getPid()));
+                break;
+            }
+        } catch (Exception e) {
+            LOG.error("Problem processing Configuration Event {}", event, e);
+        }
     }
 }

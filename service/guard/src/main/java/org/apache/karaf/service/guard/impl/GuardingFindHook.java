@@ -116,7 +116,7 @@ class GuardingFindHook implements FindHook, BundleListener {
                     trackers.put(nonRoleFilter, mst);
                     newTracker = true;
                 } catch (InvalidSyntaxException e) {
-                    GuardProxyCatalog.log.warn("Problem creating tracker for requested service without roles condition: {} ",
+                    GuardProxyCatalog.LOG.warn("Problem creating tracker for requested service without roles condition: {} ",
                             nonRoleFilter, e);
                     return;
                 }
