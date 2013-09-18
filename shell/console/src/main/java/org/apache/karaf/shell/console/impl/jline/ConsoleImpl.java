@@ -169,17 +169,7 @@ public class ConsoleImpl implements Console
 
     public void run()
     {
-        if (!(session instanceof DelegateSession)) {
-            throw new IllegalStateException("Should be an Delegate Session here, about to set the delegate");
-        }
-        DelegateSession is = (DelegateSession) session;
-
-        // make it active
-        SecuredCommandProcessorImpl secCP = new SecuredCommandProcessorImpl(bundleContext);
-        CommandSession s = secCP.createSession(consoleInput, out, err);
-
-        // Before the session is activated attributes may have been set on it. Pass these on to the real session now
-        is.setDelegate(s);
+        SecuredCommandProcessorImpl secCP = createSecuredCommandProcessor();
 
         thread = Thread.currentThread();
         CommandSessionHolder.setSession(session);
@@ -220,6 +210,21 @@ public class ConsoleImpl implements Console
 
         secCP.close();
         close(true);
+    }
+
+    SecuredCommandProcessorImpl createSecuredCommandProcessor() {
+        if (!(session instanceof DelegateSession)) {
+            throw new IllegalStateException("Should be an Delegate Session here, about to set the delegate");
+        }
+        DelegateSession is = (DelegateSession) session;
+
+        // make it active
+        SecuredCommandProcessorImpl secCP = new SecuredCommandProcessorImpl(bundleContext);
+        CommandSession s = secCP.createSession(consoleInput, out, err);
+
+        // Before the session is activated attributes may have been set on it. Pass these on to the real session now
+        is.setDelegate(s);
+        return secCP;
     }
 
 	private String readAndParseCommand() throws IOException {
@@ -470,7 +475,7 @@ public class ConsoleImpl implements Console
 
     static class DelegateSession implements CommandSession {
         final Map<String, Object> attrs = new HashMap<String, Object>();
-        volatile private CommandSession delegate;
+        volatile CommandSession delegate;
 
         @Override
         public Object execute(CharSequence commandline) throws Exception {
@@ -543,8 +548,8 @@ public class ConsoleImpl implements Console
 
         @Override
         public Object convert(Class<?> type, Object instance) {
-//            if (delegate != null)
-//                return delegate.convert(type, instance);
+            if (delegate != null)
+                return delegate.convert(type, instance);
 
             throw new UnsupportedOperationException();
         }
