@@ -106,6 +106,9 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
             map.put("*", "*"); // Any other method may be invoked by anyone
         }
 
+        LOG.info("Generating command ACL config {} into service ACL configs {}",
+                config.getPid(), configMaps.keySet());
+
         // Update config admin with the generated configuration
         for (Map.Entry<String, Dictionary<String, Object>> entry : configMaps.entrySet()) {
             Configuration genConfig = configAdmin.getConfiguration(entry.getKey());
@@ -126,7 +129,7 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
         return sb.toString();
     }
 
-    private void deleteServiceGuardConfig(String scope) throws IOException, InvalidSyntaxException {
+    private void deleteServiceGuardConfig(String originatingPid, String scope) throws IOException, InvalidSyntaxException {
         if (scope.startsWith("."))
             scope = scope.substring(1);
 
@@ -135,10 +138,11 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
             return;
 
         // Delete all the generated configurations for this scope
-        Configuration[] configs = configAdmin.listConfigurations("(service.pid=" + PROXY_SERVICE_ACL_PID_PREFIX + "." + scope + ".*)");
+        Configuration[] configs = configAdmin.listConfigurations("(service.pid=" + PROXY_SERVICE_ACL_PID_PREFIX + scope + ".*)");
         if (configs == null)
             return;
 
+        LOG.info("Config ACL deleted: {}. Deleting generated service ACL configs {}", originatingPid, configs);
         for (Configuration config : configs) {
             config.delete();
         }
@@ -152,7 +156,7 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
         try {
             switch (event.getType()) {
             case ConfigurationEvent.CM_DELETED:
-                deleteServiceGuardConfig(event.getPid().substring(PROXY_COMMAND_ACL_PID_PREFIX.length()));
+                deleteServiceGuardConfig(event.getPid(), event.getPid().substring(PROXY_COMMAND_ACL_PID_PREFIX.length()));
                 break;
             case ConfigurationEvent.CM_UPDATED:
                 generateServiceGuardConfig(configAdmin.getConfiguration(event.getPid()));
