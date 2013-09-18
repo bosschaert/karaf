@@ -24,12 +24,15 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
+import java.io.InputStream;
+import java.io.PrintStream;
 import java.security.PrivilegedAction;
 
 import javax.security.auth.Subject;
 
 import org.apache.felix.gogo.api.CommandSessionListener;
 import org.apache.felix.service.command.CommandProcessor;
+import org.apache.felix.service.command.CommandSession;
 import org.apache.felix.service.command.Converter;
 import org.apache.karaf.jaas.boot.principal.RolePrincipal;
 import org.apache.karaf.shell.console.impl.jline.ConsoleImpl.DelegateSession;
@@ -98,5 +101,94 @@ public class ConsoleImplTest {
                 return null;
             }
         });
+    }
+
+    @Test
+    public void testDelegateSession() throws Exception {
+        DelegateSession ds = new DelegateSession();
+
+        ds.put("a", "b");
+        assertEquals("b", ds.get("a"));
+
+        TestSession ts = new TestSession();
+
+        assertNull("Precondition", ts.lastInvoked);
+
+        ds.setDelegate(ts);
+        assertEquals("put(a,b)", ts.lastInvoked);
+
+        ds.put("c", "d");
+        assertEquals("put(c,d)", ts.lastInvoked);
+
+        ds.execute("hello 1234");
+        assertEquals("execute(hello 1234)", ts.lastInvoked);
+
+        ds.close();
+        assertEquals("close", ts.lastInvoked);
+
+        ds.getKeyboard();
+        assertEquals("getKeyboard", ts.lastInvoked);
+
+        ds.getConsole();
+        assertEquals("getConsole", ts.lastInvoked);
+
+        ds.get("xyz");
+        assertEquals("get(xyz)", ts.lastInvoked);
+
+        ds.format("foo", 12);
+        assertEquals("format(foo,12)", ts.lastInvoked);
+
+        ds.convert(TestSession.class, "a string");
+        assertEquals("convert(TestSession,a string)", ts.lastInvoked);
+    }
+
+    static class TestSession implements CommandSession {
+        String lastInvoked;
+
+        @Override
+        public Object execute(CharSequence commandline) throws Exception {
+            lastInvoked = "execute(" + commandline + ")";
+            return null;
+        }
+
+        @Override
+        public void close() {
+            lastInvoked = "close";
+        }
+
+        @Override
+        public InputStream getKeyboard() {
+            lastInvoked = "getKeyboard";
+            return null;
+        }
+
+        @Override
+        public PrintStream getConsole() {
+            lastInvoked = "getConsole";
+            return null;
+        }
+
+        @Override
+        public Object get(String name) {
+            lastInvoked = "get(" + name + ")";
+            return null;
+        }
+
+        @Override
+        public void put(String name, Object value) {
+            lastInvoked = "put(" + name + "," + value + ")";
+        }
+
+        @Override
+        public CharSequence format(Object target, int level) {
+            lastInvoked = "format(" + target + "," + level + ")";
+            return null;
+        }
+
+        @Override
+        public Object convert(Class<?> type, Object instance) {
+            lastInvoked = "convert(" + type.getSimpleName() + "," + instance + ")";
+            return null;
+        }
     }
 }
