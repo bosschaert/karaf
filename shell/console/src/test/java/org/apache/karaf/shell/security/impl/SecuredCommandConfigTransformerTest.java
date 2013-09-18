@@ -20,17 +20,22 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Dictionary;
 import java.util.HashMap;
 import java.util.Hashtable;
+import java.util.List;
 import java.util.Map;
 
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
 import org.junit.Test;
 import org.osgi.framework.Constants;
+import org.osgi.framework.ServiceReference;
 import org.osgi.service.cm.Configuration;
 import org.osgi.service.cm.ConfigurationAdmin;
+import org.osgi.service.cm.ConfigurationEvent;
 
 public class SecuredCommandConfigTransformerTest {
     @Test
@@ -48,12 +53,17 @@ public class SecuredCommandConfigTransformerTest {
         props2.put("service.pid", SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "xyz.123");
         Configuration commandConfig2 = mockConfiguration(props2);
 
+        Dictionary<String, Object> props3 = new Hashtable<String, Object>();
+        props3.put("test", "toast");
+        props3.put("service.pid", "xyz.123");
+        Configuration otherConfig = mockConfiguration(props3);
+
         final Map<String, Configuration> configurations = new HashMap<String, Configuration>();
 
         ConfigurationAdmin ca = EasyMock.createMock(ConfigurationAdmin.class);
         EasyMock.expect(ca.listConfigurations(
                 "(service.pid=" + SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "*)")).
-                andReturn(new Configuration [] {commandConfig, commandConfig2}).anyTimes();
+                andReturn(new Configuration [] {commandConfig, commandConfig2, otherConfig}).anyTimes();
         EasyMock.expect(ca.getConfiguration(EasyMock.isA(String.class))).andAnswer(new IAnswer<Configuration>() {
             @Override
             public Configuration answer() throws Throwable {
@@ -127,5 +137,142 @@ public class SecuredCommandConfigTransformerTest {
         EasyMock.expect(commandConfig.getProperties()).andReturn(props).anyTimes();
         EasyMock.replay(commandConfig);
         return commandConfig;
+    }
+
+    @Test
+    public void testConfigurationEventAdded() throws Exception {
+        String testPid = SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "test123";
+        Configuration conf = EasyMock.createMock(Configuration.class);
+        EasyMock.expect(conf.getPid()).andReturn(testPid).anyTimes();
+        EasyMock.replay(conf);
+
+        ConfigurationAdmin cm = EasyMock.createMock(ConfigurationAdmin.class);
+        EasyMock.expect(cm.listConfigurations(EasyMock.isA(String.class))).andReturn(null).anyTimes();
+        EasyMock.expect(cm.getConfiguration(testPid)).andReturn(conf).anyTimes();
+        EasyMock.replay(cm);
+
+        final List<String> generateCalled = new ArrayList<String>();
+        SecuredCommandConfigTransformer scct = new SecuredCommandConfigTransformer() {
+            @Override
+            void generateServiceGuardConfig(Configuration config) throws IOException {
+                generateCalled.add(config.getPid());
+            }
+        };
+        scct.setConfigAdmin(cm);
+        scct.init();
+
+        @SuppressWarnings("unchecked")
+        ServiceReference<ConfigurationAdmin> cmRef = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(cmRef);
+
+        ConfigurationEvent event = new ConfigurationEvent(cmRef, ConfigurationEvent.CM_UPDATED, null, testPid);
+
+        assertEquals("Precondition", 0, generateCalled.size());
+        scct.configurationEvent(event);
+        assertEquals(1, generateCalled.size());
+        assertEquals(testPid, generateCalled.iterator().next());
+    }
+
+    @Test
+    public void testConfigurationEventAddedNonCommand() throws Exception {
+        ConfigurationAdmin cm = EasyMock.createMock(ConfigurationAdmin.class);
+        EasyMock.expect(cm.listConfigurations(EasyMock.isA(String.class))).andReturn(null).anyTimes();
+        EasyMock.replay(cm);
+
+        SecuredCommandConfigTransformer scct = new SecuredCommandConfigTransformer();
+        scct.setConfigAdmin(cm);
+        scct.init();
+
+        @SuppressWarnings("unchecked")
+        ServiceReference<ConfigurationAdmin> cmRef = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(cmRef);
+        ConfigurationEvent event = new ConfigurationEvent(cmRef, ConfigurationEvent.CM_UPDATED, null, "test123");
+
+        scct.configurationEvent(event);
+        EasyMock.verify(cm); // Ensure that this doesn't cause any unwanted calls on ConfigAdmin
+    }
+
+    @Test
+    public void testConfigurationEventDeleted() throws Exception {
+        String testPid = SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "test123";
+
+        ConfigurationAdmin cm = EasyMock.createMock(ConfigurationAdmin.class);
+        EasyMock.expect(cm.listConfigurations(EasyMock.isA(String.class))).andReturn(null).anyTimes();
+        EasyMock.replay(cm);
+
+        SecuredCommandConfigTransformer scct = new SecuredCommandConfigTransformer();
+        scct.setConfigAdmin(cm);
+        scct.init();
+
+        @SuppressWarnings("unchecked")
+        ServiceReference<ConfigurationAdmin> cmRef = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(cmRef);
+        ConfigurationEvent event = new ConfigurationEvent(cmRef, ConfigurationEvent.CM_DELETED, null, testPid);
+
+        Configuration c1 = EasyMock.createMock(Configuration.class);
+        c1.delete();
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(c1);
+        Configuration c2 = EasyMock.createMock(Configuration.class);
+        c2.delete();
+        EasyMock.expectLastCall().once();
+        EasyMock.replay(c2);
+
+        EasyMock.reset(cm);
+        EasyMock.expect(cm.listConfigurations("(service.pid=org.apache.karaf.service.acl.command.test123.*)")).
+            andReturn(new Configuration[] {c1, c2}).once();
+        EasyMock.replay(cm);
+
+        scct.configurationEvent(event);
+
+        EasyMock.verify(cm);
+        EasyMock.verify(c1);
+        EasyMock.verify(c2);
+    }
+
+    @Test
+    public void testConfigurationEventDeletedNonScope() throws Exception {
+        String testPid = SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "abc.def";
+
+        ConfigurationAdmin cm = EasyMock.createMock(ConfigurationAdmin.class);
+        EasyMock.expect(cm.listConfigurations(EasyMock.isA(String.class))).andReturn(null).anyTimes();
+        EasyMock.replay(cm);
+
+        SecuredCommandConfigTransformer scct = new SecuredCommandConfigTransformer();
+        scct.setConfigAdmin(cm);
+        scct.init();
+
+        @SuppressWarnings("unchecked")
+        ServiceReference<ConfigurationAdmin> cmRef = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(cmRef);
+        ConfigurationEvent event = new ConfigurationEvent(cmRef, ConfigurationEvent.CM_DELETED, null, testPid);
+
+        EasyMock.reset(cm);
+        // Do not expect any further calls to cm...
+        EasyMock.replay(cm);
+
+        scct.configurationEvent(event);
+        EasyMock.verify(cm);
+    }
+
+    @Test
+    public void testConfigurationLocationChangedEventNoEffect() throws Exception {
+        String testPid = SecuredCommandConfigTransformer.PROXY_COMMAND_ACL_PID_PREFIX + "test123";
+
+        ConfigurationAdmin cm = EasyMock.createMock(ConfigurationAdmin.class);
+        EasyMock.expect(cm.listConfigurations(EasyMock.isA(String.class))).andReturn(null).anyTimes();
+        EasyMock.replay(cm);
+
+        SecuredCommandConfigTransformer scct = new SecuredCommandConfigTransformer();
+        scct.setConfigAdmin(cm);
+        scct.init();
+
+        @SuppressWarnings("unchecked")
+        ServiceReference<ConfigurationAdmin> cmRef = EasyMock.createMock(ServiceReference.class);
+        EasyMock.replay(cmRef);
+        ConfigurationEvent event = new ConfigurationEvent(cmRef, ConfigurationEvent.CM_LOCATION_CHANGED, null, testPid);
+
+        scct.configurationEvent(event);
+        EasyMock.verify(cm); // Ensure that this doesn't cause any unwanted calls on ConfigAdmin
     }
 }

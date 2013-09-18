@@ -57,7 +57,7 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
         }
     }
 
-    private void generateServiceGuardConfig(Configuration config) throws IOException {
+    void generateServiceGuardConfig(Configuration config) throws IOException {
         if (!config.getPid().startsWith(PROXY_COMMAND_ACL_PID_PREFIX)) {
             // Not a command scope configuration file
             return;
@@ -129,10 +129,7 @@ public class SecuredCommandConfigTransformer implements ConfigurationListener {
         return sb.toString();
     }
 
-    private void deleteServiceGuardConfig(String originatingPid, String scope) throws IOException, InvalidSyntaxException {
-        if (scope.startsWith("."))
-            scope = scope.substring(1);
-
+    void deleteServiceGuardConfig(String originatingPid, String scope) throws IOException, InvalidSyntaxException {
         if (scope.contains("."))
             // This is not a command scope as that should be a single word without any further dots
             return;
