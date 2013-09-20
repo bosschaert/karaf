@@ -16,11 +16,10 @@
  */
 package org.apache.karaf.service.guard.impl;
 
+import org.apache.karaf.service.guard.tools.ServiceProxyUtil;
 import org.osgi.framework.BundleActivator;
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.Filter;
-import org.osgi.framework.hooks.service.EventListenerHook;
-import org.osgi.framework.hooks.service.FindHook;
+import org.osgi.framework.ServiceReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,37 +28,42 @@ import org.slf4j.LoggerFactory;
 public class Activator implements BundleActivator {
     private final Logger log = LoggerFactory.getLogger(getClass());
 
-    GuardingEventHook guardingEventHook;
-    GuardingFindHook guardingFindHook;
-    GuardProxyCatalog guardProxyCatalog;
+    private ServiceProxyUtil serviceProxyUtil;
 
     @Override
-    public void start(BundleContext context) throws Exception {
-        String f = System.getProperty(GuardProxyCatalog.KARAF_SECURED_SERVICES_SYSPROP);
-        Filter securedServicesFilter;
-        if (f == null) {
+    public void start(final BundleContext context) throws Exception {
+        String filter = System.getProperty(GuardProxyCatalog.KARAF_SECURED_SERVICES_SYSPROP);
+        if (filter == null) {
             // No services need to be secured
             log.info("No role-based security for services as its system property is not set: " +
                     GuardProxyCatalog.KARAF_SECURED_SERVICES_SYSPROP);
             return;
         } else {
-            securedServicesFilter = context.createFilter(f);
-            log.info("Adding role-based security to services with filter: {}", f);
+            log.info("Adding role-based security to services with filter: {}", filter);
         }
 
-        guardProxyCatalog = new GuardProxyCatalog(context);
+        serviceProxyUtil = new ServiceProxyUtil(context, filter) {
+            GuardProxyCatalog guardProxyCatalog = new GuardProxyCatalog(context);
 
-        guardingEventHook = new GuardingEventHook(context, guardProxyCatalog, securedServicesFilter);
-        context.registerService(EventListenerHook.class, guardingEventHook, null);
+            @Override
+            public void close() {
+                guardProxyCatalog.close();
+            }
 
-        guardingFindHook = new GuardingFindHook(context, guardProxyCatalog, securedServicesFilter);
-        context.registerService(FindHook.class, guardingFindHook, null);
+            @Override
+            protected boolean proxyService(ServiceReference<?> sr, BundleContext bc) {
+                if (guardProxyCatalog.isProxy(sr)) {
+                    return false;
+                }
+
+                return guardProxyCatalog.handleProxificationForHook(sr);
+            }
+        };
     }
 
     @Override
     public void stop(BundleContext context) throws Exception {
-        if (guardProxyCatalog != null) {
-            guardProxyCatalog.close();
-        }
+        serviceProxyUtil.close();
     }
 }
+

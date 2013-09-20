@@ -212,9 +212,8 @@ public class GuardProxyCatalog implements ServiceListener {
         // Pre OSGi R6 it is not possible to find out whether a service is backed by a
         // Service Factory, so we assume that every service is.
 
-        if (isProxy(sr)) {
+        if (isProxy(sr))
             return false;
-        }
 
         proxyIfNotAlreadyProxied(sr); // Note does most of the work async
         return true;
