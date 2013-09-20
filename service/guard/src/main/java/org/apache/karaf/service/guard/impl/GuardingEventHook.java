@@ -39,10 +39,6 @@ class GuardingEventHook implements EventListenerHook {
         servicesFilter = securedServicesFilter;
     }
 
-    public void close() {
-        // No need to do anything
-    }
-
     @Override
     public void event(ServiceEvent event, Map<BundleContext, Collection<ListenerInfo>> listeners) {
         if (servicesFilter == null) {

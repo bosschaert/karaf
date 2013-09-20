@@ -58,14 +58,6 @@ public class Activator implements BundleActivator {
 
     @Override
     public void stop(BundleContext context) throws Exception {
-        if (guardingFindHook != null) {
-            guardingFindHook.close();
-        }
-
-        if (guardingEventHook != null) {
-            guardingEventHook.close();
-        }
-
         if (guardProxyCatalog != null) {
             guardProxyCatalog.close();
         }

@@ -17,28 +17,19 @@
 package org.apache.karaf.service.guard.impl;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Dictionary;
-import java.util.HashSet;
 import java.util.Hashtable;
-import java.util.List;
-import java.util.Set;
 
-import org.apache.karaf.service.guard.impl.GuardingFindHook.MultiplexingServiceTracker;
 import org.easymock.EasyMock;
 import org.easymock.IAnswer;
 import org.junit.Test;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.BundleEvent;
 import org.osgi.framework.Constants;
 import org.osgi.framework.Filter;
 import org.osgi.framework.FrameworkUtil;
@@ -163,239 +154,7 @@ public class GuardingFindHookTest {
         gfh.find(null, null, null, true, null); // should just do nothing
     }
 
-    @Test
-    public void testBundleListener() {
-        BundleContext bc = EasyMock.createMock(BundleContext.class);
-        bc.addBundleListener(EasyMock.isA(GuardingFindHook.class));
-        EasyMock.expectLastCall().once();
-        EasyMock.replay(bc);
-
-        GuardingFindHook gfh = new GuardingFindHook(bc, null, null);
-        EasyMock.verify(bc);
-
-        EasyMock.reset(bc);
-        bc.removeBundleListener(gfh);
-        EasyMock.replay(bc);
-
-        gfh.close();
-        EasyMock.verify(bc);
-    }
-
-    @Test
-    public void testRoleBasedFind1() throws Exception {
-        Filter nrf = nonRoleFilter("(&(test=val*)(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole))");
-
-        // Check that the filter created to find service that don't have the roles matches the right services
-        assertTrue(nrf.match(dict("test=value")));
-        assertTrue(nrf.match(dict("test=value2", "foo=bar")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=somerole",
-                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=testrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
-    }
-
-    @Test
-    public void testRoleBasedFind2() throws Exception {
-        Filter nrf = nonRoleFilter("(&(|(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole)"
-                + "(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole))(|(test.test=val*)(x>=6)))");
-
-        // Check that the filter created to find service that don't have the roles matches the right services
-        assertTrue(nrf.match(dict("test.test=value")));
-        assertTrue(nrf.match(dict("x=7")));
-        assertTrue(nrf.match(dict("test.test=value", "x=999")));
-        assertTrue(nrf.match(dict("test.test=value", "x=5")));
-        assertTrue(nrf.match(dict("test=value", "x=999")));
-        assertFalse(nrf.match(dict("test=value", "x=5")));
-        assertFalse(nrf.match(dict("test=value", "x=y", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true")));
-        assertFalse(nrf.match(dict("test=value", GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole", GuardProxyCatalog.PROXY_SERVICE_KEY + "=true",
-                GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole")));
-    }
-
-    @Test
-    public void testRoleBasedFind3() throws Exception {
-        Filter nrf = nonRoleFilter("(&(a=b)(|(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=x)"
-                + "(!(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=*))))");
-
-        assertTrue(nrf.match(dict("a=b")));
-    }
-
-    @Test
-    public void testRoleBasedFind4() throws Exception {
-        Filter nrf = nonRoleFilter("(&(a=b)(! (" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=* )))");
-
-        assertTrue(nrf.match(dict("a=b")));
-    }
-    @Test
-    public void testRoleBasedFindNotNeeded() throws Exception {
-        List<Filter> filtersCreated = new ArrayList<Filter>();
-        BundleContext hookBC = mockBundleContext(5L, filtersCreated);
-        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
-
-        Filter serviceFilter = FrameworkUtil.createFilter("(a=*)");
-        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
-
-        BundleContext clientBC = mockBundleContext(98765L);
-        filtersCreated.clear();
-        gfh.find(clientBC, null, "(a=b)", true, Collections.<ServiceReference<?>>emptyList());
-        assertEquals("The filter doesn't contain a role, so non-role filter should have been created", 0, filtersCreated.size());
-    }
-
-    @SuppressWarnings("unchecked")
-    @Test
-    public void testMultiplexingServiceTracker() throws Exception {
-        // This test examines the lifecycle and behaviour of the MultiplexingServiceTracker
-        Dictionary<String, Object> config = new Hashtable<String, Object>();
-        config.put("service.guard", "(service.id=*)");
-
-        BundleContext hookBC = mockConfigAdminBundleContext(config);
-        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
-
-        Filter serviceFilter = FrameworkUtil.createFilter("(a.b>=10)");
-        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
-
-        String roleFilter = "(&(a.b=*)(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myrole))";
-        BundleContext clientBC = mockBundleContext(98765L);
-
-        // Test that calling find with a condition on the roles property will create a service tracker
-        // without that condition
-        assertEquals(0, gfh.trackers.size());
-        gfh.find(clientBC, null, roleFilter, true, Collections.<ServiceReference<?>>emptyList());
-        assertEquals(0, gpc.proxyMap.size());
-        assertEquals("Should have added a tracker", 1, gfh.trackers.size());
-        String nonRoleFS = gfh.trackers.keySet().iterator().next();
-        Filter nonRoleFilter = FrameworkUtil.createFilter(nonRoleFS);
-        MultiplexingServiceTracker mst = gfh.trackers.get(nonRoleFS);
-        assertEquals(Collections.singletonList(clientBC), mst.clientBCs);
-        assertTrue(mst.getTrackingCount() >= 0);
-
-        // Let another client find on the same condition, it should be added to the same MST
-        BundleContext client2BC = mockBundleContext(32767L);
-
-        long serviceID = 51L;
-        Hashtable<String, Object> props = new Hashtable<String, Object>();
-        props.put(Constants.SERVICE_ID, serviceID);
-        props.put("a.b", 10);
-        ServiceReference<?> sref = mockServiceReference(props);
-        assertTrue("This service should match the filter without the roles piece", nonRoleFilter.match(sref));
-        Collection<ServiceReference<?>> refs = new HashSet<ServiceReference<?>>(Arrays.<ServiceReference<?>>asList(sref));
-        gfh.find(client2BC, null, roleFilter, true, refs);
-        assertEquals(1, gpc.proxyMap.size());
-        assertNotNull(gpc.proxyMap.get(serviceID));
-
-        assertEquals("The additional client interest in the same filter should have added it to the list of interested bundles",
-                2, mst.clientBCs.size());
-        assertTrue(mst.clientBCs.contains(clientBC));
-        assertTrue(mst.clientBCs.contains(client2BC));
-
-        long service2ID = 52L;
-        Hashtable<String, Object> props2 = new Hashtable<String, Object>();
-        props2.put(Constants.SERVICE_ID, service2ID);
-        props2.put("a.b", 10);
-        ServiceReference<Object> sref2 = mockServiceReference(props2);
-        mst.addingService(sref2);
-
-        // Let the MST receive a callback of the new (matching) service. It should a new shared proxy for both clients
-        assertEquals("Should have added a new proxy for the service", 2, gpc.proxyMap.size());
-        Set<Long> expectedKeys = new HashSet<Long>(Arrays.asList(serviceID, service2ID));
-        assertEquals(expectedKeys, gpc.proxyMap.keySet());
-
-        // If the MST receives a callback that doesn't match the main proxifying filter it should have no effect
-        Hashtable<String, Object> props3 = new Hashtable<String, Object>();
-        props3.put(Constants.SERVICE_ID, 55L);
-        props3.put("a.b", 5);
-        ServiceReference<Object> sref3 = mockServiceReference(props3);
-        mst.addingService(sref3);
-        assertEquals("There should not be any new proxies, as the reference passed in doesn't match the main filter",
-                expectedKeys, gpc.proxyMap.keySet());
-
-        // A new service lookup with a condition on the roles should add an extra MST
-        String roleFilter2 = "(" + GuardProxyCatalog.SERVICE_GUARD_ROLES_PROPERTY + "=myotherrole)";
-        gfh.find(clientBC, null, roleFilter2, true, Collections.<ServiceReference<?>>emptySet());
-        assertEquals("Amount of proxies services should still be the same", expectedKeys, gpc.proxyMap.keySet());
-        assertEquals("There should now be an additional tracker", 2, gfh.trackers.size());
-
-        MultiplexingServiceTracker mst2 = null;
-        for (MultiplexingServiceTracker m : gfh.trackers.values()) {
-            if (m != mst) {
-                mst2 = m;
-            }
-        }
-        assertEquals(Collections.singletonList(clientBC), mst2.clientBCs);
-        HashSet<String> expectedFilters = new HashSet<String>(gfh.trackers.keySet());
-
-        gfh.bundleChanged(new BundleEvent(BundleEvent.STOPPED, client2BC.getBundle()));
-        assertEquals(expectedFilters, gfh.trackers.keySet());
-        for (MultiplexingServiceTracker m : gfh.trackers.values()) {
-            assertEquals("Only one bundle should be tracked by this MST", 1, m.clientBCs.size());
-            assertTrue("Should still be open", m.getTrackingCount() >= 0);
-        }
-
-        // The started event should have no effect
-        gfh.bundleChanged(new BundleEvent(BundleEvent.STARTED, clientBC.getBundle()));
-        assertEquals(expectedFilters, gfh.trackers.keySet());
-        for (MultiplexingServiceTracker m : gfh.trackers.values()) {
-            assertEquals("Only one bundle should be tracked by this MST", 1, m.clientBCs.size());
-            assertTrue("Should still be open", m.getTrackingCount() >= 0);
-        }
-
-        gfh.bundleChanged(new BundleEvent(BundleEvent.STOPPED, clientBC.getBundle()));
-        assertEquals("Tracker should be closed", -1, mst.getTrackingCount());
-        assertEquals("Tracker should be closed", -1, mst2.getTrackingCount());
-        assertEquals("No trackers should be left", 0, gfh.trackers.size());
-    }
-
-    @Test
-    public void testMultiplexingServiceTracker2() throws Exception {
-        BundleContext hookBC = mockBundleContext(11);
-        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
-        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, FrameworkUtil.createFilter("(a.b>=10)"));
-
-        BundleContext clientBC = mockBundleContext(11);
-        MultiplexingServiceTracker mst = gfh.new MultiplexingServiceTracker(hookBC, clientBC, "(a=b)");
-        assertEquals(Collections.singletonList(clientBC), mst.clientBCs);
-
-        mst.addBundleContext(mockBundleContext(0));
-        assertEquals("Should not track the system bundle", Collections.singletonList(clientBC), mst.clientBCs);
-
-        mst.addBundleContext(hookBC);
-        assertEquals("Should not track the hook bundle itself", Collections.singletonList(clientBC), mst.clientBCs);
-    }
-
-    private Filter nonRoleFilter(String roleFilter) throws Exception, InvalidSyntaxException {
-        List<Filter> filtersCreated = new ArrayList<Filter>();
-        BundleContext hookBC = mockBundleContext(5L, filtersCreated);
-        GuardProxyCatalog gpc = new GuardProxyCatalog(hookBC);
-
-        Filter serviceFilter = FrameworkUtil.createFilter("(x=y)"); // doesn't matter here
-        GuardingFindHook gfh = new GuardingFindHook(hookBC, gpc, serviceFilter);
-
-        BundleContext clientBC = mockBundleContext(98765L);
-
-        filtersCreated.clear();
-        gfh.find(clientBC, null, roleFilter, true, Collections.<ServiceReference<?>>emptyList());
-        assertEquals("Only one filter expected to be created", 1, filtersCreated.size());
-        Filter nonRoleFilter = filtersCreated.get(0);
-        return nonRoleFilter;
-    }
-
-    private Dictionary<String, Object> dict(String ... entry) {
-        Dictionary<String, Object> d = new Hashtable<String, Object>();
-        for (String e : entry) {
-            int idx = e.indexOf('=');
-            if (idx < 0) {
-                throw new IllegalArgumentException(e);
-            }
-            d.put(e.substring(0, idx), e.substring(idx + 1));
-        }
-        return d;
-    }
-
     private BundleContext mockBundleContext(long id) throws Exception {
-        return mockBundleContext(id, new ArrayList<Filter>());
-    }
-
-    private BundleContext mockBundleContext(long id, final List<Filter> filtersCreated) throws Exception {
         Bundle bundle = EasyMock.createNiceMock(Bundle.class);
         EasyMock.expect(bundle.getBundleId()).andReturn(id).anyTimes();
 
@@ -405,7 +164,6 @@ public class GuardingFindHookTest {
             @Override
             public Filter answer() throws Throwable {
                 Filter filter = FrameworkUtil.createFilter((String) EasyMock.getCurrentArguments()[0]);
-                filtersCreated.add(filter);
                 return filter;
             }
         }).anyTimes();
