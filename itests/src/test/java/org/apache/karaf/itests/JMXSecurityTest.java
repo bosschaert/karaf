@@ -19,6 +19,9 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.management.Attribute;
@@ -29,6 +32,7 @@ import javax.management.MBeanException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.ReflectionException;
+import javax.management.openmbean.TabularData;
 import javax.management.remote.JMXConnector;
 
 import org.junit.Test;
@@ -77,6 +81,7 @@ public class JMXSecurityTest extends KarafTestSupport {
                 false, connection.getAttribute(memoryMBean, "Verbose"));
         assertInvokeSecEx(connection, memoryMBean, "gc");
 
+        // TODO put in a utility method!!!
         ObjectName securityMBean = new ObjectName("org.apache.karaf:type=security,area=jmx,name=root");
         assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
                 new Object [] {systemMBean.toString()},
@@ -99,10 +104,17 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
                 new Object [] {serviceMBean.toString(), "getService", new String [] {long.class.getName()}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
-// TODO why does this fail?
-//        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
-//                new Object [] {serviceMBean.toString(), "getService", new String [] {}},
-//                new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
+        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {serviceMBean.toString(), "getService", new String [] {long.class.getName(), boolean.class.getName()}},
+                new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
+        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {serviceMBean.toString(), "getService", new String [] {}},
+                new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
+
+        Map<String, List<String>> map = new HashMap<String, List<String>>();
+        TabularData td = (TabularData) connection.invoke(securityMBean, "canInvoke", new Object [] {map}, new String [] {Map.class.getName()});
+        assertEquals(0, td.size());
+        // TODO another call that has everything in the map put
     }
 
     @Test
