@@ -16,9 +16,16 @@ package org.apache.karaf.itests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
+import java.io.IOException;
+
 import javax.management.Attribute;
+import javax.management.AttributeNotFoundException;
+import javax.management.InstanceNotFoundException;
+import javax.management.InvalidAttributeValueException;
+import javax.management.MBeanException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
+import javax.management.ReflectionException;
 import javax.management.remote.JMXConnector;
 
 import org.junit.Test;
@@ -33,7 +40,7 @@ public class JMXSecurityTest extends KarafTestSupport {
 
 
     @Test
-    public void testJMXSecurity() throws Exception {
+    public void testJMXSecurityAsViewer() throws Exception {
         String managerUser = "managerUser" + System.currentTimeMillis();
         String managerGroup = "managerGroup" + System.currentTimeMillis();
         String viewerUser = "viewerUser" + System.currentTimeMillis();
@@ -54,31 +61,49 @@ public class JMXSecurityTest extends KarafTestSupport {
 
         JMXConnector connector = getJMXConnector(viewerUser, viewerUser);
         MBeanServerConnection connection = connector.getMBeanServerConnection();
-        ObjectName name = new ObjectName("org.apache.karaf:type=system,name=root");
+        ObjectName systemMBean = new ObjectName("org.apache.karaf:type=system,name=root");
 
-        int sl = (Integer) connection.getAttribute(name, "StartLevel");
-        assertEquals(100, sl);
-
-        try {
-            connection.setAttribute(name, new Attribute("StartLevel", 101));
-            fail("Expecting a SecurityException");
-        } catch (SecurityException se) {
-            // good
-        }
+        assertEquals(100, connection.getAttribute(systemMBean, "StartLevel"));
+        assertSetAttributeSecEx(connection, systemMBean, new Attribute("StartLevel", 101));
         assertEquals("Changing the start level should have no effect for a viewer",
-               100, connection.getAttribute(name, "StartLevel"));
-        try {
-            connection.invoke(name, "halt", new Object[] {}, new String [] {});
-            fail("Expecting a SecurityException");
-        } catch (SecurityException se) {
-            // good
-        }
+               100, connection.getAttribute(systemMBean, "StartLevel"));
+        assertInvokeSecEx(connection, systemMBean, "halt");
+
+        ObjectName memoryMBean = new ObjectName("java.lang:type=Memory");
+        assertEquals(false, connection.getAttribute(memoryMBean, "Verbose"));
+        assertSetAttributeSecEx(connection, memoryMBean, new Attribute("Verbose", true));
+        assertEquals("Changing the verbosity should have no effect for a viewer",
+                false, connection.getAttribute(memoryMBean, "Verbose"));
+        assertInvokeSecEx(connection, memoryMBean, "gc");
 
 
         // Try memory API
         // isVerbose etc...
         // try gc() should not succeed
+
+        // config admin API
     }
+
+    private void assertSetAttributeSecEx(MBeanServerConnection connection, ObjectName mbeanObjectName,
+            Attribute attribute) throws InstanceNotFoundException, AttributeNotFoundException, InvalidAttributeValueException, MBeanException, ReflectionException, IOException {
+        try {
+            connection.setAttribute(mbeanObjectName, attribute);
+            fail("Expecting a SecurityException");
+        } catch (SecurityException se) {
+            // good
+        }
+    }
+
+    private void assertInvokeSecEx(MBeanServerConnection connection, ObjectName mbeanObjectName,
+            String method) throws InstanceNotFoundException, MBeanException, ReflectionException, IOException {
+        try {
+            connection.invoke(mbeanObjectName, method, new Object[] {}, new String [] {});
+            fail("Expecting a SecurityException");
+        } catch (SecurityException se) {
+            // good
+        }
+    }
+
 
     /*
     @Test
