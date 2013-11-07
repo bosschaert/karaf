@@ -81,6 +81,7 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
                 new Object [] {systemMBean.toString()},
                 new String [] {String.class.getName()}));
+
         assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
                 new Object [] {systemMBean.toString(), "getStartLevel"},
                 new String [] {String.class.getName(), String.class.getName()}));
@@ -90,6 +91,18 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
                 new Object [] {systemMBean.toString(), "halt"},
                 new String [] {String.class.getName(), String.class.getName()}));
+
+        ObjectName serviceMBean = new ObjectName("org.apache.karaf:type=service,name=root");
+        assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {serviceMBean.toString(), "getService", new String [] {boolean.class.getName()}},
+                new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
+        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {serviceMBean.toString(), "getService", new String [] {long.class.getName()}},
+                new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
+// TODO why does this fail?
+//        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+//                new Object [] {serviceMBean.toString(), "getService", new String [] {}},
+//                new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
     }
 
     @Test
@@ -126,7 +139,7 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertEquals("Changing the verbosity should have no effect for a viewer",
                 false, connection.getAttribute(memoryMBean, "Verbose"));
         connection.invoke(memoryMBean, "gc", new Object [] {}, new String [] {});
-        // config admin API
+        // TODO config admin API
     }
 
     private void assertSetAttributeSecEx(MBeanServerConnection connection, ObjectName mbeanObjectName,
