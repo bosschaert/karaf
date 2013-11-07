@@ -14,9 +14,12 @@
 package org.apache.karaf.itests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.management.Attribute;
 import javax.management.AttributeNotFoundException;
@@ -37,13 +40,14 @@ import org.ops4j.pax.exam.spi.reactors.PerClass;
 @RunWith(PaxExam.class)
 @ExamReactorStrategy(PerClass.class)
 public class JMXSecurityTest extends KarafTestSupport {
-
+    private static AtomicInteger counter = new AtomicInteger(0);
 
     @Test
     public void testJMXSecurityAsViewer() throws Exception {
-        String managerUser = "managerUser" + System.currentTimeMillis();
-        String managerGroup = "managerGroup" + System.currentTimeMillis();
-        String viewerUser = "viewerUser" + System.currentTimeMillis();
+        String suffix = "_" + counter.incrementAndGet();
+        String managerUser = "managerUser" + System.currentTimeMillis() + suffix;
+        String managerGroup = "managerGroup" + System.currentTimeMillis() + suffix;
+        String viewerUser = "viewerUser" + System.currentTimeMillis() + suffix;
 
         System.out.println(executeCommand("jaas:realm-manage --realm karaf" +
             ";jaas:user-add " + managerUser + " " + managerUser +
@@ -55,9 +59,6 @@ public class JMXSecurityTest extends KarafTestSupport {
             ";jaas:update" +
             ";jaas:realm-manage --realm karaf" +
             ";jaas:user-list"));
-        // test that manager can do certain things but not all
-        // Access
-        // test SecurityMBean
 
         JMXConnector connector = getJMXConnector(viewerUser, viewerUser);
         MBeanServerConnection connection = connector.getMBeanServerConnection();
@@ -76,11 +77,55 @@ public class JMXSecurityTest extends KarafTestSupport {
                 false, connection.getAttribute(memoryMBean, "Verbose"));
         assertInvokeSecEx(connection, memoryMBean, "gc");
 
+        ObjectName securityMBean = new ObjectName("org.apache.karaf:type=security,area=jmx,name=root");
+        assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {systemMBean.toString()},
+                new String [] {String.class.getName()}));
+        assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {systemMBean.toString(), "getStartLevel"},
+                new String [] {String.class.getName(), String.class.getName()}));
+        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {systemMBean.toString(), "setStartLevel"},
+                new String [] {String.class.getName(), String.class.getName()}));
+        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+                new Object [] {systemMBean.toString(), "halt"},
+                new String [] {String.class.getName(), String.class.getName()}));
+    }
 
-        // Try memory API
-        // isVerbose etc...
-        // try gc() should not succeed
+    @Test
+    public void testJMXSecurityAsManager() throws Exception {
+        String suffix = "_" + counter.incrementAndGet();
+        String managerUser = "managerUser" + System.currentTimeMillis() + suffix;
+        String managerGroup = "managerGroup" + System.currentTimeMillis() + suffix;
+        String viewerUser = "viewerUser" + System.currentTimeMillis() + suffix;
 
+        System.out.println(executeCommand("jaas:realm-manage --realm karaf" +
+            ";jaas:user-add " + managerUser + " " + managerUser +
+            ";jaas:group-add " + managerUser + " " + managerGroup +
+            ";jaas:group-role-add " + managerGroup + " viewer" +
+            ";jaas:group-role-add " + managerGroup + " manager" +
+            ";jaas:user-add " + viewerUser + " " + viewerUser +
+            ";jaas:role-add " + viewerUser + " viewer" +
+            ";jaas:update" +
+            ";jaas:realm-manage --realm karaf" +
+            ";jaas:user-list"));
+
+        JMXConnector connector = getJMXConnector(managerUser, managerUser);
+        MBeanServerConnection connection = connector.getMBeanServerConnection();
+        ObjectName systemMBean = new ObjectName("org.apache.karaf:type=system,name=root");
+
+        assertEquals(100, connection.getAttribute(systemMBean, "StartLevel"));
+        assertSetAttributeSecEx(connection, systemMBean, new Attribute("StartLevel", 101));
+        assertEquals("Changing the start level should have no effect for a viewer",
+               100, connection.getAttribute(systemMBean, "StartLevel"));
+        assertInvokeSecEx(connection, systemMBean, "halt");
+
+        ObjectName memoryMBean = new ObjectName("java.lang:type=Memory");
+        assertEquals(false, connection.getAttribute(memoryMBean, "Verbose"));
+        assertSetAttributeSecEx(connection, memoryMBean, new Attribute("Verbose", true));
+        assertEquals("Changing the verbosity should have no effect for a viewer",
+                false, connection.getAttribute(memoryMBean, "Verbose"));
+        connection.invoke(memoryMBean, "gc", new Object [] {}, new String [] {});
         // config admin API
     }
 
