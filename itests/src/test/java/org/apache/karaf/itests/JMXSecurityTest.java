@@ -16,8 +16,10 @@ package org.apache.karaf.itests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFilePut;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -40,6 +42,8 @@ import javax.management.remote.JMXConnector;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.ops4j.pax.exam.Configuration;
+import org.ops4j.pax.exam.Option;
 import org.ops4j.pax.exam.junit.PaxExam;
 import org.ops4j.pax.exam.spi.reactors.ExamReactorStrategy;
 import org.ops4j.pax.exam.spi.reactors.PerClass;
@@ -48,6 +52,19 @@ import org.ops4j.pax.exam.spi.reactors.PerClass;
 @ExamReactorStrategy(PerClass.class)
 public class JMXSecurityTest extends KarafTestSupport {
     private static AtomicInteger counter = new AtomicInteger(0);
+
+    @Configuration
+    public Option[] config() {
+        List<Option> options = new ArrayList<Option>(Arrays.asList(super.config()));
+
+        // Add some extra options used by this test...
+        options.addAll(Arrays.asList(
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices()", "admin"),
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(boolean)", "viewer"),
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(long)", "manager"),
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(long,boolean)", "admin")));
+        return options.toArray(new Option[] {});
+    }
 
     @Test
     public void testJMXSecurityAsViewer() throws Exception {
@@ -266,36 +283,4 @@ public class JMXSecurityTest extends KarafTestSupport {
             // good
         }
     }
-
-
-    /*
-    @Test
-    public void listCommand() throws Exception {
-        String configListOutput = executeCommand("config:list");
-        System.out.println(configListOutput);
-        assertFalse(configListOutput.isEmpty());
-        configListOutput = executeCommand("config:list \"(service.pid=org.apache.karaf.features)\"");
-        System.out.println(configListOutput);
-        assertFalse(configListOutput.isEmpty());
-    }
-
-    @SuppressWarnings("unchecked")
-    //@Test
-    public void configsViaMBean() throws Exception {
-        JMXConnector connector = null;
-        try {
-            connector = this.getJMXConnector();
-            MBeanServerConnection connection = connector.getMBeanServerConnection();
-            ObjectName name = new ObjectName("org.apache.karaf:type=config,name=root");
-            List<String> configs = (List<String>) connection.getAttribute(name, "Configs");
-            assertTrue(configs.size() > 0);
-            assertTrue(configs.contains("org.apache.karaf.features"));
-            Map<String, String> properties = (Map<String, String>) connection.invoke(name, "listProperties", new Object[]{ "org.apache.karaf.features" }, new String[]{ "java.lang.String" });
-            assertTrue(properties.keySet().size() > 0);
-        } finally {
-            if (connector != null)
-                connector.close();
-        }
-    }
-    */
 }

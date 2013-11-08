@@ -105,12 +105,6 @@ public class KarafTestSupport {
             editConfigurationFilePut("etc/org.ops4j.pax.web.cfg", "org.osgi.service.http.port", HTTP_PORT),
             editConfigurationFilePut("etc/org.apache.karaf.management.cfg", "rmiRegistryPort", RMI_REG_PORT),
             editConfigurationFilePut("etc/org.apache.karaf.management.cfg", "rmiServerPort", RMI_SERVER_PORT),
-
-            // TODO this is really part of a test...
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices()", "admin"),
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(boolean)", "viewer"),
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(long)", "manager"),
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(long,boolean)", "admin")
         };
     }
 
