@@ -158,6 +158,16 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertEquals(serviceMBean.toString(), cd6.get("ObjectName"));
         assertEquals("getServices", cd6.get("Method"));
         assertTrue((Boolean) cd6.get("CanInvoke"));
+
+        Map<String, List<String>> map4 = new HashMap<String, List<String>>();
+        map4.put(systemMBean.toString(), Collections.singletonList("halt"));
+        TabularData td4 = (TabularData) connection.invoke(securityMBean, "canInvoke", new Object [] {map4}, new String [] {Map.class.getName()});
+        assertEquals(1, td4.size());
+
+        CompositeData cd7 = td4.get(new Object [] {systemMBean.toString(), "halt"});
+        assertEquals(systemMBean.toString(), cd7.get("ObjectName"));
+        assertEquals("halt", cd7.get("Method"));
+        assertFalse((Boolean) cd7.get("CanInvoke"));
     }
 
     @Test
