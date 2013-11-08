@@ -14,7 +14,6 @@
 package org.apache.karaf.itests;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -127,6 +126,38 @@ public class JMXSecurityTest extends KarafTestSupport {
         testJMXSecurityMBean(connection, true, false);
     }
 
+    @Test
+    public void testJMXSecurityAsAdmin() throws Exception {
+        JMXConnector connector = getJMXConnector();
+        MBeanServerConnection connection = connector.getMBeanServerConnection();
+        ObjectName systemMBean = new ObjectName("org.apache.karaf:type=system,name=root");
+
+        assertEquals(100, connection.getAttribute(systemMBean, "StartLevel"));
+        try {
+            connection.setAttribute(systemMBean, new Attribute("StartLevel", 101));
+            assertEquals(101, connection.getAttribute(systemMBean, "StartLevel"));
+        } finally {
+            connection.setAttribute(systemMBean, new Attribute("StartLevel", 100));
+        }
+        assertEquals("Start level should be changed back now",
+               100, connection.getAttribute(systemMBean, "StartLevel"));
+
+        ObjectName memoryMBean = new ObjectName("java.lang:type=Memory");
+        assertEquals(false, connection.getAttribute(memoryMBean, "Verbose"));
+        try {
+            connection.setAttribute(memoryMBean, new Attribute("Verbose", true));
+            assertEquals(true, connection.getAttribute(memoryMBean, "Verbose"));
+        } finally {
+            connection.setAttribute(memoryMBean, new Attribute("Verbose", false));
+        }
+        assertEquals("Verbosity should be changed back to false",
+                false, connection.getAttribute(memoryMBean, "Verbose"));
+        connection.invoke(memoryMBean, "gc", new Object [] {}, new String [] {});
+        // TODO config admin API
+
+        testJMXSecurityMBean(connection, true, true);
+    }
+
     private void testJMXSecurityMBean(MBeanServerConnection connection, boolean isManager, boolean isAdmin)
             throws MalformedObjectNameException, InstanceNotFoundException, MBeanException, ReflectionException, IOException {
         ObjectName securityMBean = new ObjectName("org.apache.karaf:type=security,area=jmx,name=root");
@@ -139,10 +170,10 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
                 new Object [] {systemMBean.toString(), "getStartLevel"},
                 new String [] {String.class.getName(), String.class.getName()}));
-        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+        assertEquals(isAdmin, connection.invoke(securityMBean, "canInvoke",
                 new Object [] {systemMBean.toString(), "setStartLevel"},
                 new String [] {String.class.getName(), String.class.getName()}));
-        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+        assertEquals(isAdmin, connection.invoke(securityMBean, "canInvoke",
                 new Object [] {systemMBean.toString(), "halt"},
                 new String [] {String.class.getName(), String.class.getName()}));
 
@@ -153,10 +184,10 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertEquals(isManager, connection.invoke(securityMBean, "canInvoke",
                 new Object [] {serviceMBean.toString(), "getServices", new String [] {long.class.getName()}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
-        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+        assertEquals(isAdmin, connection.invoke(securityMBean, "canInvoke",
                 new Object [] {serviceMBean.toString(), "getServices", new String [] {long.class.getName(), boolean.class.getName()}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
-        assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
+        assertEquals(isAdmin, connection.invoke(securityMBean, "canInvoke",
                 new Object [] {serviceMBean.toString(), "getServices", new String [] {}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
 
@@ -183,12 +214,12 @@ public class JMXSecurityTest extends KarafTestSupport {
         CompositeData cd3 = td2.get(new Object [] {serviceMBean.toString(), "getServices(long,boolean)"});
         assertEquals(serviceMBean.toString(), cd3.get("ObjectName"));
         assertEquals("getServices(long,boolean)", cd3.get("Method"));
-        assertFalse((Boolean) cd3.get("CanInvoke"));
+        assertEquals(isAdmin, cd3.get("CanInvoke"));
 
         CompositeData cd4 = td2.get(new Object [] {serviceMBean.toString(), "getServices()"});
         assertEquals(serviceMBean.toString(), cd4.get("ObjectName"));
         assertEquals("getServices()", cd4.get("Method"));
-        assertFalse((Boolean) cd4.get("CanInvoke"));
+        assertEquals(isAdmin, cd4.get("CanInvoke"));
 
         CompositeData cd5 = td2.get(new Object [] {systemMBean.toString(), ""});
         assertEquals(systemMBean.toString(), cd5.get("ObjectName"));
@@ -213,7 +244,7 @@ public class JMXSecurityTest extends KarafTestSupport {
         CompositeData cd7 = td4.get(new Object [] {systemMBean.toString(), "halt"});
         assertEquals(systemMBean.toString(), cd7.get("ObjectName"));
         assertEquals("halt", cd7.get("Method"));
-        assertFalse((Boolean) cd7.get("CanInvoke"));
+        assertEquals(isAdmin, cd7.get("CanInvoke"));
     }
 
     private void assertSetAttributeSecEx(MBeanServerConnection connection, ObjectName mbeanObjectName,
