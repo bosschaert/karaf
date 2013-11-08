@@ -14,6 +14,8 @@
 package org.apache.karaf.itests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.ops4j.pax.exam.karaf.options.KarafDistributionOption.editConfigurationFilePut;
@@ -102,6 +104,8 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertInvokeSecEx(connection, memoryMBean, "gc");
 
         testJMXSecurityMBean(connection, false, false);
+//        testKarafConfigAdminMBean(connection, false, false);
+//        testOSGiConfigAdminMBean(connction, false, false);
     }
 
     @Test
@@ -141,6 +145,7 @@ public class JMXSecurityTest extends KarafTestSupport {
         // TODO config admin API
 
         testJMXSecurityMBean(connection, true, false);
+        testKarafConfigAdminMBean(connection, true, false);
     }
 
     @Test
@@ -262,6 +267,33 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertEquals(systemMBean.toString(), cd7.get("ObjectName"));
         assertEquals("halt", cd7.get("Method"));
         assertEquals(isAdmin, cd7.get("CanInvoke"));
+    }
+
+    private void testKarafConfigAdminMBean(MBeanServerConnection connection, boolean isManager, boolean isAdmin)
+            throws MalformedObjectNameException, NullPointerException, InstanceNotFoundException, MBeanException, ReflectionException, IOException, AttributeNotFoundException {
+        String suffix = "." + System.currentTimeMillis() + "_" + counter.incrementAndGet();
+
+        ObjectName mbean = new ObjectName("org.apache.karaf:type=config,name=root");
+        String pid1 = "foo.bar" + suffix;
+        connection.invoke(mbean, "create", new Object [] {pid1}, new String [] {String.class.getName()});
+        connection.invoke(mbean, "setProperty", new Object [] {pid1, "x", "y"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
+        Map<?, ?> m1 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
+        assertEquals("y", m1.get("x"));
+        connection.invoke(mbean, "appendProperty", new Object [] {pid1, "x", "z"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
+        Map<?, ?> m2 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
+        assertEquals("yz", m2.get("x"));
+
+        Map<String, String> newProps = new HashMap<String, String>();
+        newProps.put("a.b.c", "abc");
+        newProps.put("d.e.f", "def");
+        connection.invoke(mbean, "update", new Object [] {pid1, newProps}, new String [] {String.class.getName(), Map.class.getName()});
+        connection.invoke(mbean, "deleteProperty", new Object [] {pid1, "d.e.f"}, new String [] {String.class.getName(), String.class.getName()});
+        Map<?, ?> m3 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
+        assertEquals("abc", m3.get("a.b.c"));
+        assertNull(m3.get("d.e.f"));
+        assertTrue(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid1));
+        connection.invoke(mbean, "delete", new Object [] {pid1}, new String [] {String.class.getName()});
+        assertFalse(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid1));
     }
 
     private void assertSetAttributeSecEx(MBeanServerConnection connection, ObjectName mbeanObjectName,
