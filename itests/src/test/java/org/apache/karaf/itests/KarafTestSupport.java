@@ -108,10 +108,10 @@ public class KarafTestSupport {
             editConfigurationFilePut("etc/org.apache.karaf.management.cfg", "rmiServerPort", RMI_SERVER_PORT),
 
             // TODO this is really part of a test...
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getService()", "admin"),
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getService(boolean)", "viewer"),
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getService(long)", "manager"),
-            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getService(long,boolean)", "admin")
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices()", "admin"),
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(boolean)", "viewer"),
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(long)", "manager"),
+            editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(long,boolean)", "admin")
         };
     }
 

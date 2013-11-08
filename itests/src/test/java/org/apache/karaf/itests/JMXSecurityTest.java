@@ -102,16 +102,16 @@ public class JMXSecurityTest extends KarafTestSupport {
 
         ObjectName serviceMBean = new ObjectName("org.apache.karaf:type=service,name=root");
         assertTrue((Boolean) connection.invoke(securityMBean, "canInvoke",
-                new Object [] {serviceMBean.toString(), "getService", new String [] {boolean.class.getName()}},
+                new Object [] {serviceMBean.toString(), "getServices", new String [] {boolean.class.getName()}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
         assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
-                new Object [] {serviceMBean.toString(), "getService", new String [] {long.class.getName()}},
+                new Object [] {serviceMBean.toString(), "getServices", new String [] {long.class.getName()}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
         assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
-                new Object [] {serviceMBean.toString(), "getService", new String [] {long.class.getName(), boolean.class.getName()}},
+                new Object [] {serviceMBean.toString(), "getServices", new String [] {long.class.getName(), boolean.class.getName()}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
         assertFalse((Boolean) connection.invoke(securityMBean, "canInvoke",
-                new Object [] {serviceMBean.toString(), "getService", new String [] {}},
+                new Object [] {serviceMBean.toString(), "getServices", new String [] {}},
                 new String [] {String.class.getName(), String.class.getName(), String[].class.getName()}));
 
         Map<String, List<String>> map = new HashMap<String, List<String>>();
@@ -120,35 +120,44 @@ public class JMXSecurityTest extends KarafTestSupport {
 
         Map<String, List<String>> map2 = new HashMap<String, List<String>>();
         map2.put(systemMBean.toString(), Collections.<String>emptyList());
-        map2.put(serviceMBean.toString(), Arrays.asList("getService(boolean)", "getService(long)", "getService(long,boolean)", "getService()"));
+        map2.put(serviceMBean.toString(), Arrays.asList("getServices(boolean)", "getServices(long)", "getServices(long,boolean)", "getServices()"));
         TabularData td2 = (TabularData) connection.invoke(securityMBean, "canInvoke", new Object [] {map2}, new String [] {Map.class.getName()});
         assertEquals(5, td2.size());
 
-        CompositeData cd1 = td2.get(new Object [] {serviceMBean.toString(), "getService(boolean)"});
+        CompositeData cd1 = td2.get(new Object [] {serviceMBean.toString(), "getServices(boolean)"});
         assertEquals(serviceMBean.toString(), cd1.get("ObjectName"));
-        assertEquals("getService(boolean)", cd1.get("Method"));
+        assertEquals("getServices(boolean)", cd1.get("Method"));
         assertTrue((Boolean) cd1.get("CanInvoke"));
 
-        CompositeData cd2 = td2.get(new Object [] {serviceMBean.toString(), "getService(long)"});
+        CompositeData cd2 = td2.get(new Object [] {serviceMBean.toString(), "getServices(long)"});
         assertEquals(serviceMBean.toString(), cd2.get("ObjectName"));
-        assertEquals("getService(long)", cd2.get("Method"));
+        assertEquals("getServices(long)", cd2.get("Method"));
         assertFalse((Boolean) cd2.get("CanInvoke"));
 
-        CompositeData cd3 = td2.get(new Object [] {serviceMBean.toString(), "getService(long,boolean)"});
+        CompositeData cd3 = td2.get(new Object [] {serviceMBean.toString(), "getServices(long,boolean)"});
         assertEquals(serviceMBean.toString(), cd3.get("ObjectName"));
-        assertEquals("getService(long,boolean)", cd3.get("Method"));
+        assertEquals("getServices(long,boolean)", cd3.get("Method"));
         assertFalse((Boolean) cd3.get("CanInvoke"));
 
-        CompositeData cd4 = td2.get(new Object [] {serviceMBean.toString(), "getService()"});
+        CompositeData cd4 = td2.get(new Object [] {serviceMBean.toString(), "getServices()"});
         assertEquals(serviceMBean.toString(), cd4.get("ObjectName"));
-        assertEquals("getService()", cd4.get("Method"));
+        assertEquals("getServices()", cd4.get("Method"));
         assertFalse((Boolean) cd4.get("CanInvoke"));
 
         CompositeData cd5 = td2.get(new Object [] {systemMBean.toString(), ""});
         assertEquals(systemMBean.toString(), cd5.get("ObjectName"));
         assertEquals("", cd5.get("Method"));
         assertTrue((Boolean) cd5.get("CanInvoke"));
-        // TODO another call that has everything in the map put
+
+        Map<String, List<String>> map3 = new HashMap<String, List<String>>();
+        map3.put(serviceMBean.toString(), Collections.singletonList("getServices"));
+        TabularData td3 = (TabularData) connection.invoke(securityMBean, "canInvoke", new Object [] {map3}, new String [] {Map.class.getName()});
+        assertEquals(1, td3.size());
+
+        CompositeData cd6 = td3.get(new Object [] {serviceMBean.toString(), "getServices"});
+        assertEquals(serviceMBean.toString(), cd6.get("ObjectName"));
+        assertEquals("getServices", cd6.get("Method"));
+        assertTrue((Boolean) cd6.get("CanInvoke"));
     }
 
     @Test
