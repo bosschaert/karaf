@@ -19,6 +19,8 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,7 @@ import javax.management.MBeanException;
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
 import javax.management.ReflectionException;
+import javax.management.openmbean.CompositeData;
 import javax.management.openmbean.TabularData;
 import javax.management.remote.JMXConnector;
 
@@ -114,6 +117,37 @@ public class JMXSecurityTest extends KarafTestSupport {
         Map<String, List<String>> map = new HashMap<String, List<String>>();
         TabularData td = (TabularData) connection.invoke(securityMBean, "canInvoke", new Object [] {map}, new String [] {Map.class.getName()});
         assertEquals(0, td.size());
+
+        Map<String, List<String>> map2 = new HashMap<String, List<String>>();
+        map2.put(systemMBean.toString(), Collections.<String>emptyList());
+        map2.put(serviceMBean.toString(), Arrays.asList("getService(boolean)", "getService(long)", "getService(long,boolean)", "getService()"));
+        TabularData td2 = (TabularData) connection.invoke(securityMBean, "canInvoke", new Object [] {map2}, new String [] {Map.class.getName()});
+        assertEquals(5, td2.size());
+
+        CompositeData cd1 = td2.get(new Object [] {serviceMBean.toString(), "getService(boolean)"});
+        assertEquals(serviceMBean.toString(), cd1.get("ObjectName"));
+        assertEquals("getService(boolean)", cd1.get("Method"));
+        assertTrue((Boolean) cd1.get("CanInvoke"));
+
+        CompositeData cd2 = td2.get(new Object [] {serviceMBean.toString(), "getService(long)"});
+        assertEquals(serviceMBean.toString(), cd2.get("ObjectName"));
+        assertEquals("getService(long)", cd2.get("Method"));
+        assertFalse((Boolean) cd2.get("CanInvoke"));
+
+        CompositeData cd3 = td2.get(new Object [] {serviceMBean.toString(), "getService(long,boolean)"});
+        assertEquals(serviceMBean.toString(), cd3.get("ObjectName"));
+        assertEquals("getService(long,boolean)", cd3.get("Method"));
+        assertFalse((Boolean) cd3.get("CanInvoke"));
+
+        CompositeData cd4 = td2.get(new Object [] {serviceMBean.toString(), "getService()"});
+        assertEquals(serviceMBean.toString(), cd4.get("ObjectName"));
+        assertEquals("getService()", cd4.get("Method"));
+        assertFalse((Boolean) cd4.get("CanInvoke"));
+
+        CompositeData cd5 = td2.get(new Object [] {systemMBean.toString(), ""});
+        assertEquals(systemMBean.toString(), cd5.get("ObjectName"));
+        assertEquals("", cd5.get("Method"));
+        assertTrue((Boolean) cd5.get("CanInvoke"));
         // TODO another call that has everything in the map put
     }
 
