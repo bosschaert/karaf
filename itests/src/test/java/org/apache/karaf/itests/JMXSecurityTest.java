@@ -47,6 +47,7 @@ import org.junit.runner.RunWith;
 import org.ops4j.pax.exam.Configuration;
 import org.ops4j.pax.exam.Option;
 import org.ops4j.pax.exam.junit.PaxExam;
+import org.ops4j.pax.exam.options.extra.VMOption;
 import org.ops4j.pax.exam.spi.reactors.ExamReactorStrategy;
 import org.ops4j.pax.exam.spi.reactors.PerClass;
 
@@ -61,6 +62,7 @@ public class JMXSecurityTest extends KarafTestSupport {
 
         // Add some extra options used by this test...
         options.addAll(Arrays.asList(
+            new VMOption("-Djavax.management.builder.initial=org.apache.karaf.management.boot.KarafMBeanServerBuilder"),
             editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices()", "admin"),
             editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(boolean)", "viewer"),
             editConfigurationFilePut("etc/jmx.acl.org.apache.karaf.service.cfg", "getServices(long)", "manager"),
@@ -104,7 +106,7 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertInvokeSecEx(connection, memoryMBean, "gc");
 
         testJMXSecurityMBean(connection, false, false);
-//        testKarafConfigAdminMBean(connection, false, false);
+        testKarafConfigAdminMBean(connection, false, false);
 //        testOSGiConfigAdminMBean(connction, false, false);
     }
 
@@ -275,25 +277,47 @@ public class JMXSecurityTest extends KarafTestSupport {
 
         ObjectName mbean = new ObjectName("org.apache.karaf:type=config,name=root");
         String pid1 = "foo.bar" + suffix;
-        connection.invoke(mbean, "create", new Object [] {pid1}, new String [] {String.class.getName()});
-        connection.invoke(mbean, "setProperty", new Object [] {pid1, "x", "y"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
+        assertJmxInvoke(isManager, connection, mbean, "create", new Object [] {pid1}, new String [] {String.class.getName()});
+        assertJmxInvoke(isManager, connection, mbean, "setProperty", new Object [] {pid1, "x", "y"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
         Map<?, ?> m1 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
-        assertEquals("y", m1.get("x"));
-        connection.invoke(mbean, "appendProperty", new Object [] {pid1, "x", "z"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
+        if (isManager)
+            assertEquals("y", m1.get("x"));
+        else
+            assertNull(m1.get("x"));
+        assertJmxInvoke(isManager, connection, mbean, "appendProperty", new Object [] {pid1, "x", "z"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
         Map<?, ?> m2 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
-        assertEquals("yz", m2.get("x"));
+        if (isManager)
+            assertEquals("yz", m2.get("x"));
+        else
+            assertNull(m2.get("x"));
 
         Map<String, String> newProps = new HashMap<String, String>();
         newProps.put("a.b.c", "abc");
         newProps.put("d.e.f", "def");
-        connection.invoke(mbean, "update", new Object [] {pid1, newProps}, new String [] {String.class.getName(), Map.class.getName()});
-        connection.invoke(mbean, "deleteProperty", new Object [] {pid1, "d.e.f"}, new String [] {String.class.getName(), String.class.getName()});
+        assertJmxInvoke(isManager, connection, mbean, "update", new Object [] {pid1, newProps}, new String [] {String.class.getName(), Map.class.getName()});
+        assertJmxInvoke(isManager, connection, mbean, "deleteProperty", new Object [] {pid1, "d.e.f"}, new String [] {String.class.getName(), String.class.getName()});
         Map<?, ?> m3 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
-        assertEquals("abc", m3.get("a.b.c"));
-        assertNull(m3.get("d.e.f"));
-        assertTrue(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid1));
-        connection.invoke(mbean, "delete", new Object [] {pid1}, new String [] {String.class.getName()});
+        if (isManager) {
+            assertEquals("abc", m3.get("a.b.c"));
+            assertNull(m3.get("d.e.f"));
+            assertTrue(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid1));
+        } else {
+            assertNull(m3.get("a.b.c"));
+        }
+        assertJmxInvoke(isManager, connection, mbean, "delete", new Object [] {pid1}, new String [] {String.class.getName()});
         assertFalse(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid1));
+    }
+
+    private Object assertJmxInvoke(boolean expectSuccess, MBeanServerConnection connection, ObjectName mbean, String method,
+            Object[] params, String[] signature) throws InstanceNotFoundException, MBeanException, ReflectionException, IOException {
+        try {
+            Object result = connection.invoke(mbean, method, params, signature);
+            assertTrue(expectSuccess);
+            return result;
+        } catch (SecurityException se) {
+            assertFalse(expectSuccess);
+            return null;
+        }
     }
 
     private void assertSetAttributeSecEx(MBeanServerConnection connection, ObjectName mbeanObjectName,
