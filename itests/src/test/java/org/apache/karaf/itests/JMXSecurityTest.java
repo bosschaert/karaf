@@ -39,7 +39,13 @@ import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import javax.management.ReflectionException;
 import javax.management.openmbean.CompositeData;
+import javax.management.openmbean.CompositeDataSupport;
+import javax.management.openmbean.CompositeType;
+import javax.management.openmbean.OpenType;
+import javax.management.openmbean.SimpleType;
 import javax.management.openmbean.TabularData;
+import javax.management.openmbean.TabularDataSupport;
+import javax.management.openmbean.TabularType;
 import javax.management.remote.JMXConnector;
 
 import org.junit.Test;
@@ -107,7 +113,7 @@ public class JMXSecurityTest extends KarafTestSupport {
 
         testJMXSecurityMBean(connection, false, false);
         testKarafConfigAdminMBean(connection, false, false);
-//        testOSGiConfigAdminMBean(connction, false, false);
+        testOSGiConfigAdminMBean(connection, false, false);
     }
 
     @Test
@@ -144,10 +150,10 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertEquals("Changing the verbosity should have no effect for a viewer",
                 false, connection.getAttribute(memoryMBean, "Verbose"));
         connection.invoke(memoryMBean, "gc", new Object [] {}, new String [] {});
-        // TODO config admin API
 
         testJMXSecurityMBean(connection, true, false);
         testKarafConfigAdminMBean(connection, true, false);
+        testOSGiConfigAdminMBean(connection, true, false);
     }
 
     @Test
@@ -159,12 +165,13 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertEquals(100, connection.getAttribute(systemMBean, "StartLevel"));
         try {
             connection.setAttribute(systemMBean, new Attribute("StartLevel", 101));
-            assertEquals(101, connection.getAttribute(systemMBean, "StartLevel"));
+            assertGetAttributeRetry("Start level should have been changed",
+                    101, connection, systemMBean, "StartLevel");
         } finally {
             connection.setAttribute(systemMBean, new Attribute("StartLevel", 100));
         }
-        assertEquals("Start level should be changed back now",
-               100, connection.getAttribute(systemMBean, "StartLevel"));
+        assertGetAttributeRetry("Start level should be changed back now",
+               100, connection, systemMBean, "StartLevel");
 
         ObjectName memoryMBean = new ObjectName("java.lang:type=Memory");
         assertEquals(false, connection.getAttribute(memoryMBean, "Verbose"));
@@ -177,9 +184,10 @@ public class JMXSecurityTest extends KarafTestSupport {
         assertEquals("Verbosity should be changed back to false",
                 false, connection.getAttribute(memoryMBean, "Verbose"));
         connection.invoke(memoryMBean, "gc", new Object [] {}, new String [] {});
-        // TODO config admin API
 
         testJMXSecurityMBean(connection, true, true);
+        testKarafConfigAdminMBean(connection, true, true);
+        testOSGiConfigAdminMBean(connection, true, true);
     }
 
     private void testJMXSecurityMBean(MBeanServerConnection connection, boolean isManager, boolean isAdmin)
@@ -283,19 +291,20 @@ public class JMXSecurityTest extends KarafTestSupport {
     private void testKarafConfigAdminMBean(MBeanServerConnection connection, String pidPrefix, boolean shouldSucceed)
             throws MalformedObjectNameException, InstanceNotFoundException, MBeanException, ReflectionException, IOException,
             AttributeNotFoundException {
-        String suffix = "." + System.currentTimeMillis() + "_" + counter.incrementAndGet();
-
         ObjectName mbean = new ObjectName("org.apache.karaf:type=config,name=root");
-        String pid1 = pidPrefix + suffix;
-        assertJmxInvoke(shouldSucceed, connection, mbean, "create", new Object [] {pid1}, new String [] {String.class.getName()});
-        assertJmxInvoke(shouldSucceed, connection, mbean, "setProperty", new Object [] {pid1, "x", "y"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
-        Map<?, ?> m1 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
+
+        String suffix = "." + System.currentTimeMillis() + "_" + counter.incrementAndGet();
+        String pid = pidPrefix + suffix;
+
+        assertJmxInvoke(shouldSucceed, connection, mbean, "create", new Object [] {pid}, new String [] {String.class.getName()});
+        assertJmxInvoke(shouldSucceed, connection, mbean, "setProperty", new Object [] {pid, "x", "y"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
+        Map<?, ?> m1 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid}, new String [] {String.class.getName()});
         if (shouldSucceed)
             assertEquals("y", m1.get("x"));
         else
             assertNull(m1.get("x"));
-        assertJmxInvoke(shouldSucceed, connection, mbean, "appendProperty", new Object [] {pid1, "x", "z"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
-        Map<?, ?> m2 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
+        assertJmxInvoke(shouldSucceed, connection, mbean, "appendProperty", new Object [] {pid, "x", "z"}, new String [] {String.class.getName(), String.class.getName(), String.class.getName()});
+        Map<?, ?> m2 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid}, new String [] {String.class.getName()});
         if (shouldSucceed)
             assertEquals("yz", m2.get("x"));
         else
@@ -304,18 +313,120 @@ public class JMXSecurityTest extends KarafTestSupport {
         Map<String, String> newProps = new HashMap<String, String>();
         newProps.put("a.b.c", "abc");
         newProps.put("d.e.f", "def");
-        assertJmxInvoke(shouldSucceed, connection, mbean, "update", new Object [] {pid1, newProps}, new String [] {String.class.getName(), Map.class.getName()});
-        assertJmxInvoke(shouldSucceed, connection, mbean, "deleteProperty", new Object [] {pid1, "d.e.f"}, new String [] {String.class.getName(), String.class.getName()});
-        Map<?, ?> m3 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid1}, new String [] {String.class.getName()});
+        assertJmxInvoke(shouldSucceed, connection, mbean, "update", new Object [] {pid, newProps}, new String [] {String.class.getName(), Map.class.getName()});
+        assertJmxInvoke(shouldSucceed, connection, mbean, "deleteProperty", new Object [] {pid, "d.e.f"}, new String [] {String.class.getName(), String.class.getName()});
+        Map<?, ?> m3 = (Map<?, ?>) connection.invoke(mbean, "listProperties", new Object [] {pid}, new String [] {String.class.getName()});
         if (shouldSucceed) {
             assertEquals("abc", m3.get("a.b.c"));
             assertNull(m3.get("d.e.f"));
-            assertTrue(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid1));
+            assertTrue(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid));
         } else {
             assertNull(m3.get("a.b.c"));
         }
-        assertJmxInvoke(shouldSucceed, connection, mbean, "delete", new Object [] {pid1}, new String [] {String.class.getName()});
-        assertFalse(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid1));
+        assertJmxInvoke(shouldSucceed, connection, mbean, "delete", new Object [] {pid}, new String [] {String.class.getName()});
+        assertFalse(((List<?>) connection.getAttribute(mbean, "Configs")).contains(pid));
+    }
+
+    private void testOSGiConfigAdminMBean(MBeanServerConnection connection, boolean isManager, boolean isAdmin) throws Exception {
+        boolean found = false;
+
+        // Find the OSGi Config Admin MBean(s) based on the Object Name pattern
+        for (ObjectName name : connection.queryNames(new ObjectName("osgi.compendium:service=cm,*"), null)) {
+            found = true;
+            testOSGiConfigAdminMBean(connection, name, "foo.bar", isManager, isAdmin);
+            testOSGiConfigAdminMBean(connection, name, "jmx.acl", isAdmin, isAdmin);
+            testOSGiConfigAdminMBean(connection, name, "org.apache.karaf.command.acl", isAdmin, isAdmin);
+            testOSGiConfigAdminMBean(connection, name, "org.apache.karaf.service.acl", isAdmin, isAdmin);
+            testOSGiConfigAdminMBean(connection, name, "org.apache.karaf.somethingelse", isManager, isAdmin);
+        }
+        assertTrue("Should be at least one ConfigAdmin MBean", found);
+    }
+
+    private void testOSGiConfigAdminMBean(MBeanServerConnection connection, ObjectName mbean, String pidPrefix, boolean shouldSucceed, boolean isAdmin) throws Exception {
+        String infix = "." + System.currentTimeMillis();
+        String suffix = infix + "_" + counter.incrementAndGet();
+        String pid = pidPrefix + suffix;
+
+        CompositeType ct = new CompositeType("PROPERTY", "X",
+                new String[] {"Key", "Value", "Type"},
+                new String[] {"X", "X", "X"},
+                new OpenType<?>[] {SimpleType.STRING, SimpleType.STRING, SimpleType.STRING});
+        TabularType tt = new TabularType("PROPERTIES", "X", ct, new String [] {"Key"});
+
+        TabularDataSupport tds = new TabularDataSupport(tt);
+        Map<String, Object> data = new HashMap<String, Object>();
+        data.put("Key", "foo");
+        data.put("Value", "bar");
+        data.put("Type", "String");
+        CompositeDataSupport cds = new CompositeDataSupport(ct, data);
+        tds.put(cds);
+
+        assertJmxInvoke(shouldSucceed, connection, mbean, "update", new Object [] {pid, tds}, new String [] {String.class.getName(), TabularData.class.getName()});
+        TabularData td = (TabularData) connection.invoke(mbean, "getProperties", new Object [] {pid}, new String [] {String.class.getName()});
+        if (shouldSucceed) {
+            assertEquals("bar", td.get(new Object[] {"foo"}).get("Value"));
+        }
+
+        String[][] configs = (String[][]) connection.invoke(mbean, "getConfigurations", new Object [] {"(service.pid=" + pid + ")"}, new String [] {String.class.getName()});
+        if (shouldSucceed) {
+            assertEquals(1, configs.length);
+            assertEquals(pid, configs[0][0]);
+        }
+        assertJmxInvoke(shouldSucceed, connection, mbean, "delete", new Object [] {pid}, new String [] {String.class.getName()});
+
+        TabularDataSupport tds2 = new TabularDataSupport(tt);
+        Map<String, Object> data2 = new HashMap<String, Object>();
+        data2.put("Key", "a.b.c");
+        data2.put("Value", "d.e.f");
+        data2.put("Type", "String");
+        CompositeDataSupport cds2 = new CompositeDataSupport(ct, data2);
+        tds2.put(cds2);
+
+        String suffix2 = infix + "_" + counter.incrementAndGet();
+        String pid2 = pidPrefix + suffix2;
+        String location2 = "mylocation" + System.currentTimeMillis();
+        assertJmxInvoke(shouldSucceed, connection, mbean, "updateForLocation", new Object [] {pid2, location2, tds2}, new String [] {String.class.getName(), String.class.getName(), TabularData.class.getName()});
+        TabularData td2 = (TabularData) connection.invoke(mbean, "getPropertiesForLocation", new Object [] {pid2, location2}, new String [] {String.class.getName(), String.class.getName()});
+        if (shouldSucceed) {
+            assertEquals("d.e.f", td2.get(new Object[] {"a.b.c"}).get("Value"));
+        }
+        assertJmxInvoke(shouldSucceed, connection, mbean, "deleteForLocation", new Object [] {pid2, location2}, new String [] {String.class.getName(), String.class.getName()});
+
+        if (isAdmin) {
+            String suffix3 = infix + "_" + counter.incrementAndGet();
+            String pid3 = pidPrefix + suffix3;
+
+            TabularDataSupport tds3 = new TabularDataSupport(tt);
+            assertJmxInvoke(shouldSucceed, connection, mbean, "update", new Object [] {pid3, tds3}, new String [] {String.class.getName(), TabularData.class.getName()});
+            String[][] configs2 = (String[][]) connection.invoke(mbean, "getConfigurations", new Object [] {"(service.pid=" + pidPrefix + infix + "*)"}, new String [] {String.class.getName()});
+            assertEquals(1, configs2.length);
+            assertEquals(pid3, configs2[0][0]);
+            String location3 = "my.other.location." + System.currentTimeMillis();
+            assertJmxInvoke(shouldSucceed, connection, mbean, "setBundleLocation", new Object [] {pid3, location3}, new String [] {String.class.getName(), String.class.getName()});
+            String[][] configs3 = (String[][]) connection.invoke(mbean, "getConfigurations", new Object [] {"(service.pid=" + pidPrefix + infix + "*)"}, new String [] {String.class.getName()});
+            assertEquals(1, configs3.length);
+            assertEquals(pid3, configs3[0][0]);
+            connection.invoke(mbean, "deleteConfigurations", new Object [] {"(service.pid=" + pid3 + ")"}, new String [] {String.class.getName()});
+            assertEquals(0, ((String[][]) connection.invoke(mbean, "getConfigurations", new Object [] {"(service.pid=" + pidPrefix + infix + "*)"}, new String [] {String.class.getName()})).length);
+        }
+    }
+
+    private void assertGetAttributeRetry(String explanation, Object expected, MBeanServerConnection connection, ObjectName mbean, String attrName)
+            throws AttributeNotFoundException, InstanceNotFoundException, MBeanException, ReflectionException, IOException {
+        int count = 5;
+        while (count > 0) {
+            count--;
+            try {
+                assertEquals(explanation, expected, connection.getAttribute(mbean, attrName));
+                return;
+            } catch (AssertionError ae) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                }
+            }
+        }
+        assertEquals(explanation, expected, connection.getAttribute(mbean, attrName));
     }
 
     private Object assertJmxInvoke(boolean expectSuccess, MBeanServerConnection connection, ObjectName mbean, String method,
