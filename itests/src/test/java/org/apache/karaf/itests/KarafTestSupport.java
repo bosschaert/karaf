@@ -79,7 +79,7 @@ public class KarafTestSupport {
 
     @Inject
     protected FeaturesService featureService;
-    
+
     /**
      * To make sure the tests run only when the boot features are fully installed
      */
@@ -281,9 +281,13 @@ public class KarafTestSupport {
     }
 
     public JMXConnector getJMXConnector() throws Exception {
+        return getJMXConnector("karaf", "karaf");
+    }
+
+    public JMXConnector getJMXConnector(String userName, String passWord) throws Exception {
         JMXServiceURL url = new JMXServiceURL("service:jmx:rmi:///jndi/rmi://localhost:" + RMI_REG_PORT+ "/karaf-root");
         Hashtable<String, Object> env = new Hashtable<String, Object>();
-        String[] credentials = new String[]{ "karaf", "karaf" };
+        String[] credentials = new String[]{ userName, passWord };
         env.put("jmx.remote.credentials", credentials);
         JMXConnector connector = JMXConnectorFactory.connect(url, env);
         return connector;
@@ -298,13 +302,13 @@ public class KarafTestSupport {
         }
         Assert.fail("Feature " + featureName + " should be installed but is not");
     }
-    
+
     public void assertFeaturesInstalled(String ... expectedFeatures) {
-        Set<String> expectedFeaturesSet = new HashSet<String>(Arrays.asList(expectedFeatures)); 
+        Set<String> expectedFeaturesSet = new HashSet<String>(Arrays.asList(expectedFeatures));
         Feature[] features = featureService.listInstalledFeatures();
         Set<String> installedFeatures = new HashSet<String>();
         for (Feature feature : features) {
-            installedFeatures.add(feature.getName()); 
+            installedFeatures.add(feature.getName());
         }
         String msg = "Expecting the following features to be installed : " + expectedFeaturesSet + " but found " + installedFeatures;
         Assert.assertTrue(msg, installedFeatures.containsAll(expectedFeaturesSet));
@@ -313,7 +317,7 @@ public class KarafTestSupport {
     public void assertContains(String expectedPart, String actual) {
         assertTrue("Should contain '" + expectedPart + "' but was : " + actual, actual.contains(expectedPart));
     }
-    
+
     public void assertContainsNot(String expectedPart, String actual) {
         Assert.assertFalse("Should not contain '" + expectedPart + "' but was : " + actual, actual.contains(expectedPart));
     }
@@ -325,7 +329,7 @@ public class KarafTestSupport {
 	protected void assertBundleNotInstalled(String name) {
 	    Assert.assertNull("Bundle " + name + " should not be installed", findBundleByName(name));
 	}
-	
+
 	protected Bundle findBundleByName(String symbolicName) {
 	    for (Bundle bundle : bundleContext.getBundles()) {
 	        if (bundle.getSymbolicName().equals(symbolicName)) {
@@ -339,7 +343,7 @@ public class KarafTestSupport {
         featureService.installFeature(feature);
         assertFeatureInstalled(feature);
     }
-    
+
     protected void installAssertAndUninstallFeature(String feature) throws Exception {
         featureService.installFeature(feature);
         assertFeatureInstalled(feature);
